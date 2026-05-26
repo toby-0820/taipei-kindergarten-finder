@@ -62,12 +62,19 @@ export async function fetchHtml(target: FetchTarget): Promise<string | null> {
   }
 
   // 2歲專班 — extract hidden form fields and postback
-  const cookies = firstResp.headers.get("set-cookie") ?? "";
-  const cookieHeader = cookies.split(",").map((c) => c.split(";")[0].trim()).join("; ");
+  // Workers fetch: use getSetCookie() to get all set-cookie headers as array
+  // (don't split single string by comma — cookie expiry dates contain commas).
+  const setCookies: string[] = typeof firstResp.headers.getSetCookie === "function"
+    ? firstResp.headers.getSetCookie()
+    : ((firstResp.headers.get("set-cookie") ?? "").split(/,(?=\s*[^;,= ]+=)/));
+  const cookieHeader = setCookies
+    .map((c) => c.split(";")[0].trim())
+    .filter((c) => c.length > 0)
+    .join("; ");
 
-  const vs = extract(firstHtml, /name="__VIEWSTATE"\s+value="([^"]*)"/);
-  const ev = extract(firstHtml, /name="__EVENTVALIDATION"\s+value="([^"]*)"/);
-  const vg = extract(firstHtml, /name="__VIEWSTATEGENERATOR"\s+value="([^"]*)"/);
+  const vs = extract(firstHtml, /name="__VIEWSTATE"[^>]*\bvalue="([^"]*)"/);
+  const ev = extract(firstHtml, /name="__EVENTVALIDATION"[^>]*\bvalue="([^"]*)"/);
+  const vg = extract(firstHtml, /name="__VIEWSTATEGENERATOR"[^>]*\bvalue="([^"]*)"/);
   if (!vs || !ev) return null;
 
   const body = new URLSearchParams({
