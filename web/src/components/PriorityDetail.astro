@@ -1,13 +1,21 @@
 ---
 ---
 <template id="priority-detail-template">
-  <div>
-    <div class="priority-row" style="font-weight: 600; border-bottom: 1px solid var(--border)">
-      <span>順位</span><span>報名數</span><span>機率</span>
-    </div>
-    <div class="rows"></div>
-    <div class="muted" style="font-size: 0.8em; margin-top: 0.5rem">
-      機率為依目前報名數推算，最終以官方抽籤結果為準。
-    </div>
+  <div class="priority-tables"></div>
+  <div class="muted" style="font-size: 0.8em; margin-top: 0.5rem">
+    機率為依目前報名數推算，最終以官方抽籤結果為準。
   </div>
 </template>
+
+<style is:global>
+  .priority-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.9rem; }
+  .priority-table:first-child { margin-top: 0; }
+  .priority-table caption { text-align: left; padding: 0.4rem 0.5rem; background: #f3f4f6; border-radius: 4px 4px 0 0; font-weight: 600; }
+  .priority-table th, .priority-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); text-align: left; }
+  .priority-table th { background: #fafafa; font-weight: 600; }
+  .priority-table td.num, .priority-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .priority-table tr.highlight { background: rgba(37,99,235,0.08); }
+  .priority-table tr.highlight td { font-weight: 600; }
+  .priority-table .prob-100 { color: var(--good); }
+  .priority-table .prob-0 { color: var(--bad); }
+</style>
