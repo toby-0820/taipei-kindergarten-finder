@@ -16,34 +16,47 @@ export interface FetchTarget {
   type: SchoolType;
   district: string;
   age_band: AgeBand;
+  // ASP.NET postback parameters. If postback=null, do a plain GET.
+  // Otherwise POST with __EVENTTARGET = postback.eventTarget and
+  // ctl00$MainContent$classType = postback.classTypeValue.
+  postback: { eventTarget: string; classTypeValue: string } | null;
 }
+
+// Public site (kid.tp.edu.tw): default GET = 3-5歲班; postback to 2歲專班.
+const PUBLIC_CLASSES: Array<{ age_band: AgeBand; postback: FetchTarget["postback"] }> = [
+  { age_band: "3-5歲班", postback: null },
+  { age_band: "2歲專班", postback: { eventTarget: "ctl00$MainContent$classType$1", classTypeValue: "1" } },
+];
+
+// Non-profit site (npkid.tp.edu.tw): default GET = 5歲班;
+// postbacks to 4歲班, 3歲班, 2歲專班.
+const NP_CLASSES: Array<{ age_band: AgeBand; postback: FetchTarget["postback"] }> = [
+  { age_band: "5歲班", postback: null },
+  { age_band: "4歲班", postback: { eventTarget: "ctl00$MainContent$classType$1", classTypeValue: "5" } },
+  { age_band: "3歲班", postback: { eventTarget: "ctl00$MainContent$classType$2", classTypeValue: "4" } },
+  { age_band: "2歲專班", postback: { eventTarget: "ctl00$MainContent$classType$3", classTypeValue: "1" } },
+];
 
 export function buildTargets(): FetchTarget[] {
   const targets: FetchTarget[] = [];
   for (const [district, code] of Object.entries(DIST_CODES)) {
     for (const type of Object.keys(SITES) as SchoolType[]) {
-      targets.push({
-        url: `${SITES[type]}/Board.aspx?dist=${code}`,
-        type, district,
-        age_band: "3-5歲班",
-      });
-      // 2歲專班 uses the same URL but requires postback (handled in fetchHtml)
-      targets.push({
-        url: `${SITES[type]}/Board.aspx?dist=${code}`,
-        type, district,
-        age_band: "2歲專班",
-      });
+      const url = `${SITES[type]}/Board.aspx?dist=${code}`;
+      const classes = type === "public" ? PUBLIC_CLASSES : NP_CLASSES;
+      for (const c of classes) {
+        targets.push({ url, type, district, age_band: c.age_band, postback: c.postback });
+      }
     }
   }
   return targets;
 }
 
 /**
- * Fetch HTML for a target. For 3-5歲班, a simple GET. For 2歲專班, performs
- * ASP.NET postback to switch radio to value=1.
+ * Fetch HTML for a target. If postback=null, plain GET. Otherwise GET first
+ * to harvest cookies + viewstate, then POST with the target's __EVENTTARGET
+ * and classType value to switch the page.
  */
 export async function fetchHtml(target: FetchTarget): Promise<string | null> {
-  // First GET to capture cookies + viewstate
   let firstResp: Response;
   try {
     firstResp = await fetch(target.url, {
@@ -57,13 +70,8 @@ export async function fetchHtml(target: FetchTarget): Promise<string | null> {
   if (!firstResp.ok) return null;
   const firstHtml = await firstResp.text();
 
-  if (target.age_band === "3-5歲班") {
-    return firstHtml;
-  }
+  if (!target.postback) return firstHtml;
 
-  // 2歲專班 — extract hidden form fields and postback
-  // Workers fetch: use getSetCookie() to get all set-cookie headers as array
-  // (don't split single string by comma — cookie expiry dates contain commas).
   const setCookies: string[] = typeof firstResp.headers.getSetCookie === "function"
     ? firstResp.headers.getSetCookie()
     : ((firstResp.headers.get("set-cookie") ?? "").split(/,(?=\s*[^;,= ]+=)/));
@@ -78,12 +86,12 @@ export async function fetchHtml(target: FetchTarget): Promise<string | null> {
   if (!vs || !ev) return null;
 
   const body = new URLSearchParams({
-    "__EVENTTARGET": "ctl00$MainContent$classType$1",
+    "__EVENTTARGET": target.postback.eventTarget,
     "__EVENTARGUMENT": "",
     "__VIEWSTATE": vs,
     "__EVENTVALIDATION": ev,
     "__VIEWSTATEGENERATOR": vg ?? "",
-    "ctl00$MainContent$classType": "1",
+    "ctl00$MainContent$classType": target.postback.classTypeValue,
   });
 
   let postResp: Response;

@@ -1,5 +1,7 @@
 export type SchoolType = "public" | "non_profit";
-export type AgeBand = "3-5歲班" | "2歲專班";
+// 公幼 has mixed-age "3-5歲班" + "2歲專班".
+// 非營利 has one class per age: "5歲班" / "4歲班" / "3歲班" / "2歲專班".
+export type AgeBand = "3-5歲班" | "5歲班" | "4歲班" | "3歲班" | "2歲專班";
 
 export interface ParsedClass {
   age_band: AgeBand;

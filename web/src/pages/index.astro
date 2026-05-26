@@ -46,7 +46,7 @@ import MapView from "../components/MapView.astro";
       type AnyL = any;
       declare global { interface Window { L: AnyL } }
 
-      type AgeBandKey = "3-5歲班" | "2歲專班";
+      type AgeBandKey = "3-5歲班" | "5歲班" | "4歲班" | "3歲班" | "2歲專班";
       type SchoolTypeKey = "public" | "non_profit";
       interface PrioritySel { ageBand: AgeBandKey; priority: number; }
 
@@ -70,15 +70,28 @@ import MapView from "../components/MapView.astro";
 
       function parsePriority(v: string): PrioritySel | null {
         if (!v) return null;
-        const m35 = v.match(/^35-(\d+)$/);
-        if (m35) return { ageBand: "3-5歲班", priority: parseInt(m35[1], 10) };
-        const m2 = v.match(/^2-(\d+)$/);
-        if (m2) return { ageBand: "2歲專班", priority: parseInt(m2[1], 10) };
-        return null;
+        // Format: "<bandKey>-<priority>" where bandKey ∈ {35, 5, 4, 3, 2}
+        const m = v.match(/^(35|5|4|3|2)-(\d+)$/);
+        if (!m) return null;
+        const bandMap: Record<string, AgeBandKey> = {
+          "35": "3-5歲班",
+          "5":  "5歲班",
+          "4":  "4歲班",
+          "3":  "3歲班",
+          "2":  "2歲專班",
+        };
+        return { ageBand: bandMap[m[1]], priority: parseInt(m[2], 10) };
       }
 
       function priorityFor(schoolType: SchoolTypeKey): PrioritySel | null {
         return schoolType === "public" ? state.publicPriority : state.nonProfitPriority;
+      }
+
+      // Display label — D1 now stores accurate labels post full-rescrape.
+      // Just add a thin space inside "3-5歲班" for readability.
+      function ageBandLabel(_schoolType: SchoolTypeKey, ageBand: string): string {
+        if (ageBand === "3-5歲班") return "3-5 歲班";
+        return ageBand;
       }
 
       function priorityToArrayIdx(priority: number): number {
@@ -90,18 +103,31 @@ import MapView from "../components/MapView.astro";
       const locateStatus = document.getElementById("locate-status")!;
       let lastSearch: { lat?: number; lng?: number; address?: string; school?: string } | null = null;
 
-      function getAgeBandFilter(): Set<"3-5歲班" | "2歲專班"> {
-        const allowed = new Set<"3-5歲班" | "2歲專班">();
-        if ((document.getElementById("f-age-35") as HTMLInputElement).checked) allowed.add("3-5歲班");
-        if ((document.getElementById("f-age-2") as HTMLInputElement).checked) allowed.add("2歲專班");
+      // Returns a Set of allowed "${type}|${age_band}" combinations.
+      // 公幼  3-5歲    → "public|3-5歲班"
+      // 公幼  2歲專班  → "public|2歲專班"
+      // 非營利 5歲      → "non_profit|5歲班"
+      // 非營利 4歲      → "non_profit|4歲班"
+      // 非營利 3歲      → "non_profit|3歲班"
+      // 非營利 2歲      → "non_profit|2歲專班"
+      function getClassFilter(): Set<string> {
+        const allowed = new Set<string>();
+        const map: Array<[string, string]> = [
+          ["f-pub-35", "public|3-5歲班"],
+          ["f-pub-2", "public|2歲專班"],
+          ["f-np-5", "non_profit|5歲班"],
+          ["f-np-4", "non_profit|4歲班"],
+          ["f-np-3", "non_profit|3歲班"],
+          ["f-np-2", "non_profit|2歲專班"],
+        ];
+        for (const [id, key] of map) {
+          if ((document.getElementById(id) as HTMLInputElement | null)?.checked) allowed.add(key);
+        }
         return allowed;
       }
 
-      function getTypeFilter(): Set<"public" | "non_profit"> {
-        const allowed = new Set<"public" | "non_profit">();
-        if ((document.getElementById("f-public") as HTMLInputElement).checked) allowed.add("public");
-        if ((document.getElementById("f-nonprofit") as HTMLInputElement).checked) allowed.add("non_profit");
-        return allowed;
+      function classAllowed(allowed: Set<string>, type: string, ageBand: string): boolean {
+        return allowed.has(`${type}|${ageBand}`);
       }
 
       function initMap() {
@@ -121,13 +147,11 @@ import MapView from "../components/MapView.astro";
       }
 
       function computeDisplayed(): SchoolResult[] {
-        const ageFilter = getAgeBandFilter();
-        const typeFilter = getTypeFilter();
+        const allowed = getClassFilter();
         const sortMode = (document.getElementById("f-sort") as HTMLSelectElement)?.value ?? "distance";
-        const visible = state.results.filter((s) => {
-          if (!typeFilter.has(s.type)) return false;
-          return s.classes.some((c) => ageFilter.has(c.age_band));
-        });
+        const visible = state.results.filter((s) =>
+          s.classes.some((c) => classAllowed(allowed, s.type, c.age_band)),
+        );
         if (state.lastQueryLat != null) {
           visible.sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity));
         }
@@ -160,7 +184,7 @@ import MapView from "../components/MapView.astro";
       function renderResults() {
         const list = document.getElementById("result-list")!;
         list.innerHTML = "";
-        const ageFilter = getAgeBandFilter();
+        const allowed = getClassFilter();
         const displayed = computeDisplayed();
         if (displayed.length === 0) {
           list.innerHTML = '<div class="empty">無符合條件的園所</div>';
@@ -169,7 +193,7 @@ import MapView from "../components/MapView.astro";
         const tpl = document.getElementById("result-card-template") as HTMLTemplateElement;
         const detailTpl = document.getElementById("priority-detail-template") as HTMLTemplateElement;
         for (const s of displayed) {
-          const classesToShow = s.classes.filter((c) => ageFilter.has(c.age_band));
+          const classesToShow = s.classes.filter((c) => classAllowed(allowed, s.type, c.age_band));
           const node = tpl.content.cloneNode(true) as DocumentFragment;
           const card = node.querySelector(".card") as HTMLElement;
           card.dataset.schoolId = s.school_id;
@@ -203,7 +227,7 @@ import MapView from "../components/MapView.astro";
             const priorityLabel = userPriorityApplies
               ? `第 ${sel!.priority} 順位`
               : `順位 8（一般幼兒）`;
-            row.innerHTML = `<span>${c.age_band}｜名額 ${c.capacity}</span><span>${priorityLabel} ${fmtPct(prob)}</span>`;
+            row.innerHTML = `<span>${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}</span><span>${priorityLabel} ${fmtPct(prob)}</span>`;
             classesEl.appendChild(row);
           }
 
@@ -220,7 +244,7 @@ import MapView from "../components/MapView.astro";
             table.className = "priority-table";
 
             const caption = document.createElement("caption");
-            caption.textContent = `${c.age_band}　名額 ${c.capacity}　總登記 ${c.registrations?.total ?? "—"} 人`;
+            caption.textContent = `${ageBandLabel(s.type, c.age_band)}　名額 ${c.capacity}　總登記 ${c.registrations?.total ?? "—"} 人`;
             table.appendChild(caption);
 
             const thead = document.createElement("thead");
@@ -293,16 +317,16 @@ import MapView from "../components/MapView.astro";
           `<span class="muted">${typeLabel}・${escapeHtml(s.district)}・${fmtKm(s.distance_km)}</span>`,
         ];
         const sel = priorityFor(s.type);
-        const ageFilter = getAgeBandFilter();
+        const allowed = getClassFilter();
         for (const c of s.classes) {
-          if (!ageFilter.has(c.age_band)) continue;
+          if (!classAllowed(allowed, s.type, c.age_band)) continue;
           const applies = sel != null && sel.ageBand === c.age_band;
           const probIdx = applies
             ? Math.min(priorityToArrayIdx(sel!.priority), c.probabilities.probs.length - 1)
             : Math.min(4, c.probabilities.probs.length - 1);
           const prob = c.probabilities.probs[probIdx];
           const label = applies ? `第 ${sel!.priority} 順位` : `順位 8（一般）`;
-          lines.push(`${c.age_band}｜名額 ${c.capacity}｜${label} <strong>${fmtPct(prob)}</strong>`);
+          lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <strong>${fmtPct(prob)}</strong>`);
         }
         return lines.join("<br>");
       }
@@ -433,8 +457,8 @@ import MapView from "../components/MapView.astro";
         renderMap(state.lastQueryLat, state.lastQueryLng);
       });
 
-      // Re-render when type/age band checkboxes toggle (client-side filter)
-      for (const id of ["f-public", "f-nonprofit", "f-age-35", "f-age-2"]) {
+      // Re-render when any (type × age) checkbox toggles
+      for (const id of ["f-pub-35", "f-pub-2", "f-np-5", "f-np-4", "f-np-3", "f-np-2"]) {
         document.getElementById(id)!.addEventListener("change", () => {
           if (state.results.length > 0) {
             renderResults();
