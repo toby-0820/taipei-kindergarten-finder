@@ -92,49 +92,50 @@ import MapView from "../components/MapView.astro";
         if (state.homeMarker) { state.map.removeLayer(state.homeMarker); state.homeMarker = null; }
       }
 
-      function renderResults() {
-        const list = document.getElementById("result-list")!;
-        list.innerHTML = "";
+      function computeDisplayed(): SchoolResult[] {
         const ageFilter = getAgeBandFilter();
         const typeFilter = getTypeFilter();
         const sortMode = (document.getElementById("f-sort") as HTMLSelectElement)?.value ?? "distance";
         const visible = state.results.filter((s) => {
           if (!typeFilter.has(s.type)) return false;
-          // keep school only if at least one of its classes matches the age filter
           return s.classes.some((c) => ageFilter.has(c.age_band));
         });
-
+        if (state.lastQueryLat != null) {
+          visible.sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity));
+        }
         if (sortMode === "probability") {
-          // Sort by user's selected priority probability (default 順位 8) across
-          // the first age-band that's enabled. Higher probability first; tie-break
-          // by distance.
           const priorityIdx = state.userPriority != null
             ? (state.userPriority <= 4 ? 0 : state.userPriority - 4)
-            : 4; // default 順位 8
+            : 4;
           const probOf = (s: SchoolResult): number => {
             const c = s.classes.find((cc) => ageFilter.has(cc.age_band));
             if (!c) return -1;
             const p = c.probabilities.probs[Math.min(priorityIdx, c.probabilities.probs.length - 1)];
             return p ?? -1;
           };
-          visible.sort((a, b) => {
+          const pool = visible.slice(0, 10);
+          pool.sort((a, b) => {
             const diff = probOf(b) - probOf(a);
             if (Math.abs(diff) > 1e-9) return diff;
             return (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity);
           });
+          return pool;
         }
-        // Default 'distance' sort already applied by API response (or by name-search
-        // → no spatial sort needed); but enforce in case API order drifted.
-        else if (state.lastQueryLat != null) {
-          visible.sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity));
-        }
-        if (visible.length === 0) {
+        return visible;
+      }
+
+      function renderResults() {
+        const list = document.getElementById("result-list")!;
+        list.innerHTML = "";
+        const ageFilter = getAgeBandFilter();
+        const displayed = computeDisplayed();
+        if (displayed.length === 0) {
           list.innerHTML = '<div class="empty">無符合條件的園所</div>';
           return;
         }
         const tpl = document.getElementById("result-card-template") as HTMLTemplateElement;
         const detailTpl = document.getElementById("priority-detail-template") as HTMLTemplateElement;
-        for (const s of visible) {
+        for (const s of displayed) {
           const classesToShow = s.classes.filter((c) => ageFilter.has(c.age_band));
           const node = tpl.content.cloneNode(true) as DocumentFragment;
           const card = node.querySelector(".card") as HTMLElement;
@@ -230,11 +231,7 @@ import MapView from "../components/MapView.astro";
             .addTo(state.map)
             .bindPopup("您的位置");
         }
-        const ageFilter = getAgeBandFilter();
-        const typeFilter = getTypeFilter();
-        const visible = state.results.filter((s) =>
-          typeFilter.has(s.type) && s.classes.some((c) => ageFilter.has(c.age_band)),
-        );
+        const visible = computeDisplayed();
         const bounds: [number, number][] = [];
         for (const s of visible) {
           if (s.lat == null || s.lng == null) continue;

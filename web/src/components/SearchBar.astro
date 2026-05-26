@@ -44,8 +44,12 @@
     <label>排序：</label>
     <select id="f-sort">
       <option value="distance">距離最近</option>
-      <option value="probability">中籤機率最高</option>
+      <option value="probability">中籤機率最高（附近 10 間中）</option>
     </select>
+  </div>
+  <div id="sort-hint" class="sort-hint muted">
+    距離最近：全市園所，越近越前。<br />
+    中籤機率最高：先取離你最近的 10 間，再按你的順位中籤機率由高到低排序。
   </div>
 </div>
 
@@ -62,4 +66,5 @@
   .filters { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem; align-items: center; }
   .filters select { padding: 0.25rem 0.5rem; }
   .filter-sep { color: var(--muted); }
+  .sort-hint { font-size: 0.78rem; margin-top: 0.4rem; line-height: 1.5; }
 </style>
