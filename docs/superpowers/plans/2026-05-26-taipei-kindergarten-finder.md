@@ -6,7 +6,7 @@
 
 **Architecture:** Cloudflare full-stack — Astro static frontend (Pages) calls Workers API backed by D1 SQLite at the edge. A Workers Cron Trigger fetches `kid.tp.edu.tw` and `npkid.tp.edu.tw` every 3 minutes, parses their server-rendered ASP.NET pages, and upserts snapshots into D1. KV caches geocoding results for 24h.
 
-**Tech Stack:** TypeScript, pnpm workspaces, Cloudflare Workers + D1 + KV + Pages, Astro 4, Leaflet + OpenStreetMap tiles, TGOS (Taiwan government geocoding), Vitest + Miniflare for testing, Playwright for E2E, GitHub Actions for CI/CD.
+**Tech Stack:** TypeScript, pnpm workspaces, Cloudflare Workers + D1 + KV + Pages, Astro 4, Leaflet + OpenStreetMap tiles. **Geocoding:** browser `navigator.geolocation` for user position; OSM Nominatim only used server-side by the cron to geocode the ~250 school addresses (once each, then cached in `schools.lat/lng`). Vitest + Miniflare for testing, Playwright for E2E, GitHub Actions for CI/CD.
 
 **Spec reference:** `docs/superpowers/specs/2026-05-26-taipei-kindergarten-finder-design.md`
 
@@ -49,10 +49,9 @@ taipei-kindergarten-finder/
 │   │   ├── routes/
 │   │   │   ├── search.ts              (GET /api/search)
 │   │   │   ├── school.ts              (GET /api/school/:id)
-│   │   │   └── geocode.ts             (GET /api/geocode)
 │   │   ├── lib/
 │   │   │   ├── db.ts                  (D1 query wrappers)
-│   │   │   ├── geocode.ts             (TGOS client + KV cache)
+│   │   │   ├── geocode.ts             (Nominatim client + KV cache, cron-only)
 │   │   │   ├── distance.ts            (haversineKm)
 │   │   │   └── probability.ts         (calcByPriority)
 │   │   └── scraper/
@@ -96,9 +95,10 @@ These need real-world account / key creation that the implementing agent cannot 
 
 - [ ] **Cloudflare account** — sign up at https://dash.cloudflare.com (free tier is enough).
 - [ ] **Install wrangler CLI** locally: `npm install -g wrangler && wrangler login`
-- [ ] **TGOS API key** — register at https://api.nlsc.gov.tw/ (內政部國土測繪中心，免費). Note the key for `.dev.vars`.
-- [ ] **Discord webhook URL** — for failure alerts. Create one in any Discord channel under "Integrations → Webhooks".
+- [ ] **Discord webhook URL** *(optional, can defer)* — for failure alerts. Create one in any Discord channel under "Integrations → Webhooks". Plan defaults to empty string; alerts silently no-op.
 - [ ] **Node 20+ and pnpm 8+** — `corepack enable && corepack prepare pnpm@latest --activate`
+
+No geocoding API key required. Users get located via browser `navigator.geolocation` (no permission for them to pre-grant — page asks on first search). The cron uses OSM Nominatim (free, no registration) to geocode each school's address once; subsequent runs reuse the cached `lat/lng`. Plan sets a polite `User-Agent` header per OSM policy.
 
 The implementing agent should pause and request these before starting Task 2 if not provided.
 
@@ -289,8 +289,8 @@ ENVIRONMENT = "production"
 export interface Env {
   DB: D1Database;
   GEOCODE_CACHE: KVNamespace;
-  TGOS_API_KEY: string;
   DISCORD_WEBHOOK_URL: string;
+  ADMIN_TOKEN: string;
   ENVIRONMENT: string;
 }
 
@@ -314,9 +314,11 @@ export default {
 - [ ] **Step 6: Create `.dev.vars.example`**
 
 ```
-TGOS_API_KEY=replace-with-real-key
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_URL=
+ADMIN_TOKEN=local-dev-token
 ```
+
+Leave `DISCORD_WEBHOOK_URL` empty for local dev — alerts no-op silently. `ADMIN_TOKEN` is used by `/api/admin/run-cron` to gate manual cron triggers; any value is fine for local.
 
 - [ ] **Step 7: Run local dev to verify Worker boots**
 
@@ -1251,7 +1253,9 @@ git commit -m "feat(worker): D1 query wrappers for schools, snapshots, mode"
 
 ---
 
-### Task 10: Geocoding client (TGOS + KV cache)
+### Task 10: Geocoding client (OSM Nominatim, server-side only, KV cached)
+
+This module is called **only by the cron** to resolve school addresses once each. The user-facing search path receives `lat`/`lng` directly from the browser (Task 22), so this never runs on the request path.
 
 **Files:**
 - Create: `worker/src/lib/geocode.ts`
@@ -1267,12 +1271,12 @@ function makeKv() {
   const store = new Map<string, string>();
   return {
     get: async (key: string) => store.get(key) ?? null,
-    put: async (key: string, value: string) => { store.set(key, value); },
+    put: async (key: string, _value: string, _opts?: any) => { store.set(key, _value); },
   } as unknown as KVNamespace;
 }
 
 describe("geocodeAddress", () => {
-  it("returns cached result without calling TGOS", async () => {
+  it("returns cached result without calling Nominatim", async () => {
     const kv = makeKv();
     const cacheKey = await sha256Hex("台北市中山區民生東路二段147號");
     await kv.put(`geo:${cacheKey}`, JSON.stringify({ lat: 25.06, lng: 121.54, source: "cache" }));
@@ -1280,34 +1284,51 @@ describe("geocodeAddress", () => {
     const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as any;
 
-    const result = await geocodeAddress("台北市中山區民生東路二段147號", kv, "test-key");
-    expect(result.lat).toBeCloseTo(25.06);
+    const result = await geocodeAddress("台北市中山區民生東路二段147號", kv);
+    expect(result?.lat).toBeCloseTo(25.06);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("calls TGOS on cache miss and writes back", async () => {
+  it("calls Nominatim on cache miss and writes back", async () => {
     const kv = makeKv();
     globalThis.fetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({
-        SUCCESS: "true",
-        FUZZY_TYPE: "1",
-        X: "121.55",
-        Y: "25.05",
-      }), { headers: { "content-type": "application/json" } }),
+      new Response(JSON.stringify([{ lat: "25.05", lon: "121.55" }]),
+        { headers: { "content-type": "application/json" } }),
     ) as any;
 
-    const result = await geocodeAddress("台北市信義區市府路1號", kv, "test-key");
-    expect(result.lat).toBeCloseTo(25.05);
-    expect(result.lng).toBeCloseTo(121.55);
+    const result = await geocodeAddress("台北市信義區市府路1號", kv);
+    expect(result?.lat).toBeCloseTo(25.05);
+    expect(result?.lng).toBeCloseTo(121.55);
 
     const cached = await kv.get(`geo:${await sha256Hex("台北市信義區市府路1號")}`);
     expect(cached).not.toBeNull();
   });
 
-  it("throws or returns null on TGOS failure", async () => {
+  it("sends a User-Agent header (OSM policy)", async () => {
+    const kv = makeKv();
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ lat: "25.0", lon: "121.5" }]),
+        { headers: { "content-type": "application/json" } }),
+    );
+    globalThis.fetch = fetchSpy as any;
+
+    await geocodeAddress("台北市中正區忠孝東路一段1號", kv);
+    const callArgs = fetchSpy.mock.calls[0];
+    const headers = (callArgs[1] as RequestInit).headers as Record<string, string>;
+    expect(headers["User-Agent"]).toMatch(/TaipeiKindergartenFinder/i);
+  });
+
+  it("returns null on empty Nominatim result array", async () => {
+    const kv = makeKv();
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response("[]")) as any;
+    const result = await geocodeAddress("不存在的地址", kv);
+    expect(result).toBeNull();
+  });
+
+  it("returns null on Nominatim HTTP error", async () => {
     const kv = makeKv();
     globalThis.fetch = vi.fn().mockResolvedValue(new Response("server error", { status: 500 })) as any;
-    const result = await geocodeAddress("無效地址", kv, "test-key");
+    const result = await geocodeAddress("台北市X區", kv);
     expect(result).toBeNull();
   });
 });
@@ -1330,13 +1351,14 @@ pnpm test geocode
 export interface GeocodeResult {
   lat: number;
   lng: number;
-  source: "cache" | "tgos";
+  source: "cache" | "nominatim";
 }
+
+const USER_AGENT = "TaipeiKindergartenFinder/0.1 (https://github.com/xiaolongxia/taipei-kindergarten-finder)";
 
 export async function geocodeAddress(
   address: string,
   kv: KVNamespace,
-  apiKey: string,
 ): Promise<GeocodeResult | null> {
   const key = await cacheKey(address);
   const cached = await kv.get(`geo:${key}`);
@@ -1345,31 +1367,37 @@ export async function geocodeAddress(
     return { lat: parsed.lat, lng: parsed.lng, source: "cache" };
   }
 
-  const url = new URL("https://api.nlsc.gov.tw/other/Address2Coordinate");
-  url.searchParams.set("Address", address);
-  url.searchParams.set("apikey", apiKey);
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("q", address);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("countrycodes", "tw");
+  url.searchParams.set("limit", "1");
 
   let resp: Response;
   try {
-    resp = await fetch(url.toString(), { headers: { "accept": "application/json" } });
+    resp = await fetch(url.toString(), {
+      headers: { "User-Agent": USER_AGENT, "accept": "application/json" },
+    });
   } catch {
     return null;
   }
   if (!resp.ok) return null;
 
-  let data: any;
+  let data: Array<{ lat: string; lon: string }>;
   try {
     data = await resp.json();
   } catch {
     return null;
   }
 
-  const x = parseFloat(data?.X);
-  const y = parseFloat(data?.Y);
-  if (isNaN(x) || isNaN(y)) return null;
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const lat = parseFloat(data[0].lat);
+  const lng = parseFloat(data[0].lon);
+  if (isNaN(lat) || isNaN(lng)) return null;
 
-  const result: GeocodeResult = { lat: y, lng: x, source: "tgos" };
-  await kv.put(`geo:${key}`, JSON.stringify(result), { expirationTtl: 86400 });
+  const result: GeocodeResult = { lat, lng, source: "nominatim" };
+  // cache for 30 days (school addresses rarely change)
+  await kv.put(`geo:${key}`, JSON.stringify(result), { expirationTtl: 30 * 86400 });
   return result;
 }
 
@@ -1378,8 +1406,6 @@ async function cacheKey(address: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 ```
-
-> **Note:** The actual TGOS endpoint and response format must be verified against https://api.nlsc.gov.tw documentation when the API key is obtained. If the response shape differs from `{X, Y}`, adjust parsing accordingly.
 
 - [ ] **Step 4: Run test, expect pass**
 
@@ -1391,7 +1417,7 @@ pnpm test geocode
 
 ```bash
 git add worker/src/lib/geocode.ts worker/test/unit/geocode.test.ts
-git commit -m "feat(worker): TGOS geocoding client with KV cache"
+git commit -m "feat(worker): server-side Nominatim geocoder with KV cache"
 ```
 
 ---
@@ -1488,7 +1514,6 @@ import { geocodeAddress } from "../lib/geocode";
 export interface UpsertEnv {
   DB: D1Database;
   GEOCODE_CACHE: KVNamespace;
-  TGOS_API_KEY: string;
 }
 
 export async function upsertParsedSchools(
@@ -1507,7 +1532,7 @@ export async function upsertParsedSchools(
     const addressChanged = !existing || existing.address !== s.address;
 
     if (!existing || addressChanged || lat == null || lng == null) {
-      const geo = await geocodeAddress(s.address, env.GEOCODE_CACHE, env.TGOS_API_KEY);
+      const geo = await geocodeAddress(s.address, env.GEOCODE_CACHE);
       if (geo) {
         lat = geo.lat;
         lng = geo.lng;
@@ -1628,8 +1653,8 @@ import { runScrape } from "./scraper/cron";
 export interface Env {
   DB: D1Database;
   GEOCODE_CACHE: KVNamespace;
-  TGOS_API_KEY: string;
   DISCORD_WEBHOOK_URL: string;
+  ADMIN_TOKEN: string;
   ENVIRONMENT: string;
 }
 
@@ -1643,7 +1668,7 @@ export default {
     }
     if (url.pathname === "/api/admin/run-cron" && request.method === "POST") {
       // manual trigger for bootstrap / testing — gated by header
-      if (request.headers.get("x-admin-token") !== env.TGOS_API_KEY) {
+      if (request.headers.get("x-admin-token") !== env.ADMIN_TOKEN) {
         return new Response("Forbidden", { status: 403 });
       }
       await runScrape(env);
@@ -1665,7 +1690,7 @@ export default {
 ```bash
 cd worker && pnpm dev &
 sleep 3
-curl -X POST -H "x-admin-token: $(grep TGOS_API_KEY .dev.vars | cut -d= -f2)" http://localhost:8787/api/admin/run-cron
+curl -X POST -H "x-admin-token: $(grep ADMIN_TOKEN .dev.vars | cut -d= -f2)" http://localhost:8787/api/admin/run-cron
 ```
 Expected: `{"ok":true,"ran_at":...}` and the dev server logs show schools written. Kill the dev server.
 
@@ -1689,79 +1714,7 @@ git commit -m "feat(worker): cron entry — fetch, parse, upsert, mode detect, a
 
 ## Phase E — Public API
 
-### Task 14: GET /api/geocode
-
-**Files:**
-- Create: `worker/src/routes/geocode.ts`
-- Modify: `worker/src/index.ts`
-
-- [ ] **Step 1: Create `worker/src/routes/geocode.ts`**
-
-```typescript
-import { geocodeAddress } from "../lib/geocode";
-import type { Env } from "../index";
-
-export async function handleGeocode(request: Request, env: Env): Promise<Response> {
-  const url = new URL(request.url);
-  const addr = url.searchParams.get("addr")?.trim();
-  if (!addr) {
-    return json({ error: "addr required" }, 400);
-  }
-  const result = await geocodeAddress(addr, env.GEOCODE_CACHE, env.TGOS_API_KEY);
-  if (!result) {
-    return json({ geocode_status: "not_found", hint: "請輸入完整地址" }, 200);
-  }
-  if (!isInTaipei(result.lat, result.lng)) {
-    return json({
-      geocode_status: "out_of_scope",
-      lat: result.lat, lng: result.lng,
-      hint: "本站目前僅支援台北市",
-    }, 200);
-  }
-  return json({ geocode_status: "ok", lat: result.lat, lng: result.lng });
-}
-
-function isInTaipei(lat: number, lng: number): boolean {
-  return lat >= 24.95 && lat <= 25.21 && lng >= 121.45 && lng <= 121.67;
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-    },
-  });
-}
-```
-
-- [ ] **Step 2: Wire route in `worker/src/index.ts`** (add inside `fetch`, before the 404)
-
-```typescript
-import { handleGeocode } from "./routes/geocode";
-// ...
-if (url.pathname === "/api/geocode") return handleGeocode(request, env);
-```
-
-- [ ] **Step 3: Smoke test**
-
-```bash
-pnpm dev &
-curl 'http://localhost:8787/api/geocode?addr=台北市中山區民生東路二段147號'
-```
-Expected: `{"geocode_status":"ok","lat":...,"lng":...}`
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add worker/src/routes/geocode.ts worker/src/index.ts
-git commit -m "feat(worker): GET /api/geocode endpoint"
-```
-
----
-
-### Task 15: GET /api/search
+### Task 14: GET /api/search
 
 **Files:**
 - Create: `worker/src/routes/search.ts`
@@ -1771,7 +1724,7 @@ git commit -m "feat(worker): GET /api/geocode endpoint"
 - [ ] **Step 1: Write failing integration test in `worker/test/integration/api.test.ts`**
 
 ```typescript
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 
 describe("GET /api/search", () => {
@@ -1786,7 +1739,7 @@ describe("GET /api/search", () => {
     ]);
   });
 
-  it("returns 400 when neither address nor school provided", async () => {
+  it("returns 400 when neither lat/lng nor school provided", async () => {
     const r = await SELF.fetch("https://example.com/api/search");
     expect(r.status).toBe(400);
   });
@@ -1801,29 +1754,20 @@ describe("GET /api/search", () => {
     expect(body.results[0].classes[0].probabilities.p5).toBeCloseTo(30 / 40, 4);
   });
 
-  it("returns school list with distance when address geocodes (TGOS stubbed)", async () => {
-    // Stub fetch to short-circuit the TGOS call
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
-      const u = typeof url === "string" ? url : url.toString();
-      if (u.includes("nlsc.gov.tw")) {
-        return new Response(JSON.stringify({ X: "121.54", Y: "25.06" }), {
-          headers: { "content-type": "application/json" },
-        });
-      }
-      return originalFetch(url as any);
-    }) as any;
+  it("returns school list with distance when lat/lng provided (within Taipei)", async () => {
+    const r = await SELF.fetch("https://example.com/api/search?lat=25.06&lng=121.54");
+    expect(r.status).toBe(200);
+    const body = await r.json() as any;
+    expect(body.results.length).toBeGreaterThanOrEqual(1);
+    expect(body.query_lat).toBeCloseTo(25.06, 2);
+    expect(body.results[0].distance_km).not.toBeNull();
+  });
 
-    try {
-      const r = await SELF.fetch("https://example.com/api/search?address=台北市中山區X路1號");
-      expect(r.status).toBe(200);
-      const body = await r.json() as any;
-      expect(body.results.length).toBeGreaterThanOrEqual(1);
-      expect(body.query_lat).toBeCloseTo(25.06, 2);
-      expect(body.results[0].distance_km).not.toBeNull();
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+  it("rejects lat/lng outside Taipei bounds", async () => {
+    const r = await SELF.fetch("https://example.com/api/search?lat=24.10&lng=120.65"); // 台中
+    expect(r.status).toBe(200);
+    const body = await r.json() as any;
+    expect(body.location_status).toBe("out_of_scope");
   });
 });
 ```
@@ -1880,31 +1824,38 @@ pnpm test integration
 
 ```typescript
 import { getAllSchools, getLatestSnapshots, getMode } from "../lib/db";
-import { geocodeAddress } from "../lib/geocode";
 import { haversineKm } from "../lib/distance";
 import { calcByPriority } from "../lib/probability";
 import type { Env } from "../index";
 
+const TAIPEI_BOUNDS = { latMin: 24.95, latMax: 25.21, lngMin: 121.45, lngMax: 121.67 };
+
 export async function handleSearch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const address = url.searchParams.get("address")?.trim() || null;
+  const latParam = url.searchParams.get("lat");
+  const lngParam = url.searchParams.get("lng");
   const school = url.searchParams.get("school")?.trim() || null;
   const ageBand = url.searchParams.get("age_band")?.trim() || null;
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20", 10) || 20, 50);
 
-  if (!address && !school) {
-    return json({ error: "address or school required" }, 400);
+  let queryLat: number | null = latParam != null ? parseFloat(latParam) : null;
+  let queryLng: number | null = lngParam != null ? parseFloat(lngParam) : null;
+
+  if ((queryLat == null || isNaN(queryLat) || queryLng == null || isNaN(queryLng)) && !school) {
+    return json({ error: "lat+lng (from browser geolocation) or school required" }, 400);
   }
 
-  let queryLat: number | null = null;
-  let queryLng: number | null = null;
-  if (address) {
-    const geo = await geocodeAddress(address, env.GEOCODE_CACHE, env.TGOS_API_KEY);
-    if (!geo) {
-      return json({ geocode_status: "not_found", hint: "請輸入完整地址", results: [] });
+  if (queryLat != null && queryLng != null) {
+    if (
+      queryLat < TAIPEI_BOUNDS.latMin || queryLat > TAIPEI_BOUNDS.latMax ||
+      queryLng < TAIPEI_BOUNDS.lngMin || queryLng > TAIPEI_BOUNDS.lngMax
+    ) {
+      return json({
+        location_status: "out_of_scope",
+        hint: "您的位置不在台北市，本站目前僅支援台北市",
+        results: [],
+      });
     }
-    queryLat = geo.lat;
-    queryLng = geo.lng;
   }
 
   const [schools, snapshots, modeInfo] = await Promise.all([
@@ -2015,7 +1966,7 @@ git commit -m "feat(worker): GET /api/search with distance + priority probabilit
 
 ---
 
-### Task 16: GET /api/school/:id
+### Task 15: GET /api/school/:id
 
 **Files:**
 - Create: `worker/src/routes/school.ts`
@@ -2106,7 +2057,7 @@ git commit -m "feat(worker): GET /api/school/:id endpoint"
 
 ## Phase F — Astro Frontend
 
-### Task 17: Astro project scaffold
+### Task 15: Astro project scaffold
 
 **Files:**
 - Create: `web/package.json`
@@ -2224,7 +2175,7 @@ git commit -m "feat(web): scaffold Astro frontend"
 
 ---
 
-### Task 18: API client + format helpers
+### Task 15: API client + format helpers
 
 **Files:**
 - Create: `web/src/lib/api-client.ts`
@@ -2270,12 +2221,13 @@ export interface SearchResponse {
   query_lng: number | null;
   fetched_at: number | null;
   results: SchoolResult[];
-  geocode_status?: "ok" | "not_found" | "out_of_scope";
+  location_status?: "out_of_scope";
   hint?: string;
 }
 
 export async function search(params: {
-  address?: string;
+  lat?: number;
+  lng?: number;
   school?: string;
   age_band?: "3-5歲班" | "2歲專班";
   limit?: number;
@@ -2285,6 +2237,20 @@ export async function search(params: {
   const r = await fetch(`${API_BASE}/api/search?${qs}`);
   if (!r.ok) throw new Error(`search failed: ${r.status}`);
   return r.json();
+}
+
+export function getCurrentPosition(): Promise<{ lat: number; lng: number }> {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) {
+      reject(new Error("瀏覽器不支援定位功能"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
+    );
+  });
 }
 ```
 
@@ -2346,7 +2312,7 @@ git commit -m "feat(web): API client + format + probability helpers"
 
 ---
 
-### Task 19: Search bar + Banner components
+### Task 15: Search bar + Banner components
 
 **Files:**
 - Create: `web/src/components/SearchBar.astro`
@@ -2358,14 +2324,15 @@ git commit -m "feat(web): API client + format + probability helpers"
 ---
 ---
 <div class="searchbar">
-  <div class="mode-toggle">
-    <label><input type="radio" name="mode" value="address" checked> 用地址查附近</label>
-    <label><input type="radio" name="mode" value="school"> 用學校名稱查</label>
+  <div class="row primary-row">
+    <button id="locate-btn" class="locate-btn" title="瀏覽器會詢問定位權限">
+      📍 用我目前位置搜尋
+    </button>
+    <span class="or">或</span>
+    <input id="school-input" type="text" placeholder="輸入學校名稱（如：中山、大龍）" autocomplete="off">
+    <button id="school-btn">查詢學校</button>
   </div>
-  <div class="row">
-    <input id="query-input" type="text" placeholder="輸入地址，例：台北市中山區民生東路二段147號" autocomplete="off">
-    <button id="query-btn">查詢</button>
-  </div>
+  <div id="locate-status" class="locate-status muted"></div>
   <div class="filters">
     <label><input type="checkbox" id="f-public" checked> 公幼</label>
     <label><input type="checkbox" id="f-nonprofit" checked> 非營利</label>
@@ -2387,10 +2354,14 @@ git commit -m "feat(web): API client + format + probability helpers"
 
 <style>
   .searchbar { background: white; padding: 1rem; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 1rem; }
-  .mode-toggle { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
-  .row { display: flex; gap: 0.5rem; }
-  .row input { flex: 1; padding: 0.5rem; font-size: 1rem; border: 1px solid var(--border); border-radius: 4px; }
-  .row button { padding: 0.5rem 1rem; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; }
+  .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .row input { flex: 1; min-width: 200px; padding: 0.5rem; font-size: 1rem; border: 1px solid var(--border); border-radius: 4px; }
+  .row button { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+  .locate-btn { background: var(--accent); color: white; }
+  #school-btn { background: var(--border); color: var(--text); }
+  .or { color: var(--muted); padding: 0 0.5rem; }
+  .locate-status { font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em; }
+  .locate-status.error { color: var(--bad); }
   .filters { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem; align-items: center; }
   .filters select { padding: 0.25rem 0.5rem; }
 </style>
@@ -2416,7 +2387,7 @@ git commit -m "feat(web): SearchBar + Banner components"
 
 ---
 
-### Task 20: Result list + cards + priority detail
+### Task 15: Result list + cards + priority detail
 
 **Files:**
 - Create: `web/src/components/ResultList.astro`
@@ -2502,7 +2473,7 @@ git commit -m "feat(web): result list + card + priority detail templates"
 
 ---
 
-### Task 21: Map view (Leaflet + OSM)
+### Task 15: Map view (Leaflet + OSM)
 
 **Files:**
 - Create: `web/src/components/MapView.astro`
@@ -2531,7 +2502,7 @@ git commit -m "feat(web): MapView container"
 
 ---
 
-### Task 22: Main page composition + interactive logic
+### Task 15: Main page composition + interactive logic
 
 **Files:**
 - Modify: `web/src/pages/index.astro`
@@ -2577,7 +2548,7 @@ import MapView from "../components/MapView.astro";
     </div>
 
     <script>
-      import { search } from "../lib/api-client";
+      import { search, getCurrentPosition } from "../lib/api-client";
       import type { SearchResponse, SchoolResult } from "../lib/api-client";
       import { fmtKm, fmtPct, fmtTimeAgo } from "../lib/format";
       import { calcByPriority } from "../lib/probability";
@@ -2717,22 +2688,40 @@ import MapView from "../components/MapView.astro";
         age.textContent = `資料更新於 ${fmtTimeAgo(state.fetchedAt)}`;
       }
 
-      async function runSearch() {
-        const mode = (document.querySelector('input[name="mode"]:checked') as HTMLInputElement).value;
-        const q = (document.getElementById("query-input") as HTMLInputElement).value.trim();
-        if (!q) return;
-        const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
+      const locateStatus = document.getElementById("locate-status")!;
+      let lastSearch: { lat?: number; lng?: number; school?: string } | null = null;
+
+      async function runSearchByLocation() {
+        locateStatus.classList.remove("error");
+        locateStatus.textContent = "正在取得您的位置…";
+        let pos;
         try {
-          const resp: SearchResponse = await search({
-            ...(mode === "address" ? { address: q } : { school: q }),
-            ...(ageBand ? { age_band: ageBand } : {}),
-          });
-          if (resp.geocode_status === "not_found") {
-            alert("找不到地址，請輸入更完整的地址");
-            return;
-          }
-          if (resp.geocode_status === "out_of_scope") {
-            alert("此地址不在台北市，本站目前僅支援台北市");
+          pos = await getCurrentPosition();
+        } catch (e: any) {
+          locateStatus.classList.add("error");
+          locateStatus.textContent = "無法取得位置：" + (e?.message ?? "請允許瀏覽器存取定位");
+          return;
+        }
+        locateStatus.textContent = `已取得位置：${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`;
+        const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
+        lastSearch = { lat: pos.lat, lng: pos.lng };
+        await runSearch({ lat: pos.lat, lng: pos.lng, age_band: ageBand || undefined });
+      }
+
+      async function runSearchBySchool() {
+        const name = (document.getElementById("school-input") as HTMLInputElement).value.trim();
+        if (!name) return;
+        const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
+        lastSearch = { school: name };
+        await runSearch({ school: name, age_band: ageBand || undefined });
+      }
+
+      async function runSearch(params: { lat?: number; lng?: number; school?: string; age_band?: any }) {
+        try {
+          const resp: SearchResponse = await search(params);
+          if (resp.location_status === "out_of_scope") {
+            locateStatus.classList.add("error");
+            locateStatus.textContent = "您的位置不在台北市，本站目前僅支援台北市";
             return;
           }
           state.results = resp.results;
@@ -2755,18 +2744,24 @@ import MapView from "../components/MapView.astro";
       leafletScript.onload = () => initMap();
       document.head.appendChild(leafletScript);
 
-      document.getElementById("query-btn")!.addEventListener("click", runSearch);
-      document.getElementById("query-input")!.addEventListener("keydown", (e) => {
-        if ((e as KeyboardEvent).key === "Enter") runSearch();
+      document.getElementById("locate-btn")!.addEventListener("click", runSearchByLocation);
+      document.getElementById("school-btn")!.addEventListener("click", runSearchBySchool);
+      document.getElementById("school-input")!.addEventListener("keydown", (e) => {
+        if ((e as KeyboardEvent).key === "Enter") runSearchBySchool();
       });
-      document.getElementById("f-priority")!.addEventListener("change", (e) => {
-        const v = (e.target as HTMLSelectElement).value;
+      document.getElementById("f-priority")!.addEventListener("change", () => {
+        const v = (document.getElementById("f-priority") as HTMLSelectElement).value;
         state.userPriority = v ? parseInt(v, 10) : null;
         renderResults();
       });
 
       // auto-refresh every 3 minutes if user has results
-      setInterval(() => { if (state.results.length > 0) runSearch(); }, 180_000);
+      setInterval(() => {
+        if (state.results.length > 0 && lastSearch) {
+          const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
+          runSearch({ ...lastSearch, age_band: ageBand || undefined });
+        }
+      }, 180_000);
     </script>
 
     <style>
@@ -2807,7 +2802,7 @@ git commit -m "feat(web): main page composition with search, results, map, prior
 
 ## Phase G — E2E + Deployment
 
-### Task 23: Playwright E2E specs
+### Task 15: Playwright E2E specs
 
 **Files:**
 - Create: `e2e/package.json`
@@ -2843,6 +2838,8 @@ export default defineConfig({
   use: {
     baseURL: process.env.E2E_BASE ?? "http://localhost:4321",
     screenshot: "only-on-failure",
+    permissions: ["geolocation"],
+    geolocation: { latitude: 25.06, longitude: 121.54 },
   },
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },
@@ -2850,25 +2847,24 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 3: Create `e2e/specs/address-search.spec.ts`**
+- [ ] **Step 3: Create `e2e/specs/location-search.spec.ts`**
 
 ```typescript
 import { test, expect } from "@playwright/test";
 
-test("address search shows results and map markers", async ({ page }) => {
+test("location-based search shows results and map markers", async ({ page, context }) => {
+  await context.grantPermissions(["geolocation"]);
   await page.goto("/");
-  await page.getByRole("radio", { name: "用地址查附近" }).check();
-  await page.locator("#query-input").fill("台北市中山區民生東路二段147號");
-  await page.locator("#query-btn").click();
-  await expect(page.locator(".card").first()).toBeVisible({ timeout: 10_000 });
+  await page.locator("#locate-btn").click();
+  await expect(page.locator(".card").first()).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".card .name").first()).not.toBeEmpty();
 });
 
-test("priority toggle changes displayed probability", async ({ page }) => {
+test("priority toggle changes displayed probability", async ({ page, context }) => {
+  await context.grantPermissions(["geolocation"]);
   await page.goto("/");
-  await page.locator("#query-input").fill("台北市中山區民生東路二段147號");
-  await page.locator("#query-btn").click();
-  await expect(page.locator(".card").first()).toBeVisible({ timeout: 10_000 });
+  await page.locator("#locate-btn").click();
+  await expect(page.locator(".card").first()).toBeVisible({ timeout: 15_000 });
   const before = await page.locator(".card .class-row").first().textContent();
   await page.locator("#f-priority").selectOption("1");
   const after = await page.locator(".card .class-row").first().textContent();
@@ -2881,18 +2877,17 @@ test("priority toggle changes displayed probability", async ({ page }) => {
 ```typescript
 import { test, expect } from "@playwright/test";
 
-test("school name search returns single match", async ({ page }) => {
+test("school name search returns matches", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("radio", { name: "用學校名稱查" }).check();
-  await page.locator("#query-input").fill("中山");
-  await page.locator("#query-btn").click();
+  await page.locator("#school-input").fill("中山");
+  await page.locator("#school-btn").click();
   await expect(page.locator(".card").first()).toBeVisible({ timeout: 10_000 });
 });
 
 test("priority detail expands", async ({ page }) => {
   await page.goto("/");
-  await page.locator("#query-input").fill("台北市中山區民生東路二段147號");
-  await page.locator("#query-btn").click();
+  await page.locator("#school-input").fill("中山");
+  await page.locator("#school-btn").click();
   await expect(page.locator(".card").first()).toBeVisible({ timeout: 10_000 });
   const first = page.locator(".card").first();
   await first.locator(".toggle-detail").click();
@@ -2921,7 +2916,7 @@ git commit -m "test(e2e): playwright specs for address + school search"
 
 ---
 
-### Task 24: GitHub Actions CI
+### Task 15: GitHub Actions CI
 
 **Files:**
 - Create: `.github/workflows/ci.yml`
@@ -2961,7 +2956,7 @@ git commit -m "ci: add unit-test + build workflow"
 
 ---
 
-### Task 25: GitHub Actions deploy
+### Task 15: GitHub Actions deploy
 
 **Files:**
 - Create: `.github/workflows/deploy.yml`
@@ -2971,8 +2966,8 @@ git commit -m "ci: add unit-test + build workflow"
 In the GitHub repo: Settings → Secrets and variables → Actions → New repository secret. Add:
 - `CLOUDFLARE_API_TOKEN` — generate at https://dash.cloudflare.com/profile/api-tokens with "Edit Cloudflare Workers" + Pages permissions
 - `CLOUDFLARE_ACCOUNT_ID` — visible on the Cloudflare dashboard sidebar
-- `TGOS_API_KEY` — your TGOS key
-- `DISCORD_WEBHOOK_URL` — your alerts webhook
+- `ADMIN_TOKEN` — any long random string (used to gate `/api/admin/run-cron`). Generate with `openssl rand -hex 32`
+- `DISCORD_WEBHOOK_URL` *(optional)* — your alerts webhook; if you don't have one yet, set the secret to an empty string
 
 - [ ] **Step 2: Create `.github/workflows/deploy.yml`**
 
@@ -3000,7 +2995,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Put worker secrets
         run: |
-          echo "${{ secrets.TGOS_API_KEY }}" | pnpm --filter worker exec wrangler secret put TGOS_API_KEY
+          echo "${{ secrets.ADMIN_TOKEN }}"        | pnpm --filter worker exec wrangler secret put ADMIN_TOKEN
           echo "${{ secrets.DISCORD_WEBHOOK_URL }}" | pnpm --filter worker exec wrangler secret put DISCORD_WEBHOOK_URL
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -3047,7 +3042,7 @@ Watch GitHub Actions. Expected: green build. Visit your Pages URL.
 
 ---
 
-### Task 26: Health-check cron (daily)
+### Task 15: Health-check cron (daily)
 
 **Files:**
 - Modify: `wrangler.toml`
@@ -3106,7 +3101,7 @@ git commit -m "feat(worker): daily health-check cron with Discord alerts"
 
 ---
 
-### Task 27: Polish — Lighthouse, PWA manifest, robots
+### Task 15: Polish — Lighthouse, PWA manifest, robots
 
 **Files:**
 - Create: `web/public/manifest.json`
@@ -3164,7 +3159,7 @@ git commit -m "feat(web): PWA manifest, robots, theme color"
 
 ---
 
-### Task 28: Final verification + go-live checklist
+### Task 15: Final verification + go-live checklist
 
 - [ ] **Step 1: Bootstrap remote D1**
 
@@ -3175,7 +3170,7 @@ wrangler d1 migrations apply kindergarten_db --remote
 - [ ] **Step 2: Trigger one manual cron on production**
 
 ```bash
-curl -X POST -H "x-admin-token: <TGOS_API_KEY>" https://kindergarten-api.<subdomain>.workers.dev/api/admin/run-cron
+curl -X POST -H "x-admin-token: <ADMIN_TOKEN>" https://kindergarten-api.<subdomain>.workers.dev/api/admin/run-cron
 ```
 
 - [ ] **Step 3: Verify D1 populated**
@@ -3187,11 +3182,12 @@ wrangler d1 execute kindergarten_db --remote --command "SELECT COUNT(*) FROM sch
 - [ ] **Step 4: Manual smoke test**
 
 Visit production Pages URL. Try:
-- Address: `台北市中山區民生東路二段147號`
-- School name: `中山`
-- Toggle priority dropdown
-- Open priority detail
+- Click **📍 用我目前位置搜尋** — browser asks for location permission; grant it; results appear
+- School name: `中山` — typed search returns matches
+- Toggle priority dropdown — probabilities recompute live
+- Open priority detail — table expands
 - Resize to mobile viewport — layout stacks correctly
+- If you're NOT in Taipei: should see "您的位置不在台北市" message
 
 - [ ] **Step 5: Final commit + tag v0.1.0**
 
@@ -3210,19 +3206,20 @@ Site is live.
 |---|---|
 | §1 目標 / §2 範圍 | All tasks |
 | §3 資料源 (kid.tp + npkid.tp) | T6, T7, T11 |
-| §4 整體架構 | T1, T2, T17 |
+| §4 整體架構 | T1, T2, T16 |
 | §5 D1 Schema | T3 |
 | §5 爬蟲流程 | T11, T12, T13 |
 | §5 時鐘對齊 / hash 節流 | T13 (cron expression `*/3 * * * *`; hash check is `optional` future work, called out below) |
-| §6 API /search //school //geocode | T14, T15, T16 |
+| §6 API /search + /school/:id | T14, T15 |
+| §6 Geocoding | **Spec §6 originally had `/api/geocode`; revised to browser `navigator.geolocation` per user decision. Server-side Nominatim only for school addresses in T10/T12.** |
 | §7 順位機率算法 | T5 |
-| §8 前端 UI | T17–T22 |
-| §8 「我的順位」即時重算 | T22 (priority dropdown handler) |
-| §9 錯誤處理 | T11 (fetch retry), T13 (logScrapeError + Discord), T14/T15 (HTTP codes) |
-| §10 3 分鐘更新保證 | T2 (cron config), T13, T22 (auto-refresh) |
-| §11 測試 | T4, T5, T7, T8, T10, T15, T23 |
-| §12 部署 | T1, T2, T24, T25, T26 |
-| §13 已知風險 | T26 (health check), T11 (retry) |
+| §8 前端 UI | T16–T21 |
+| §8 「我的順位」即時重算 | T21 (priority dropdown handler) |
+| §9 錯誤處理 | T11 (fetch retry), T13 (logScrapeError + Discord), T14 (HTTP codes) |
+| §10 3 分鐘更新保證 | T2 (cron config), T13, T21 (auto-refresh) |
+| §11 測試 | T4, T5, T7, T8, T10, T14, T22 |
+| §12 部署 | T1, T2, T23, T24, T25 |
+| §13 已知風險 | T25 (health check), T11 (retry) |
 
 ## Known Future Work (Explicitly Deferred — Not In MVP)
 
