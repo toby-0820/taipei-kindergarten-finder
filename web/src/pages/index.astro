@@ -124,8 +124,8 @@ import MapView from "../components/MapView.astro";
           visible.sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity));
         }
         if (sortMode === "probability") {
-          // For probability sort, we need the user's age band + priority.
-          // Default to 3-5 歲班 順位 8 if nothing selected.
+          // Take the nearest 10 schools, then sort those 10 by probability
+          // (highest first). Tie-break by distance ascending.
           const targetAgeBand: AgeBandKey = state.userPriority?.ageBand ?? "3-5歲班";
           const priorityIdx = state.userPriority != null
             ? priorityToArrayIdx(state.userPriority.priority)
@@ -136,6 +136,7 @@ import MapView from "../components/MapView.astro";
             const p = c.probabilities.probs[Math.min(priorityIdx, c.probabilities.probs.length - 1)];
             return p ?? -1;
           };
+          // `visible` was already sorted by distance ascending above.
           const pool = visible.slice(0, 10);
           pool.sort((a, b) => {
             const diff = probOf(b) - probOf(a);
