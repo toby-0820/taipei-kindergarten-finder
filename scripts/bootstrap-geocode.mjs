@@ -30,13 +30,34 @@ function d1Exec(sql) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function progressiveFallbacks(query) {
+  // Strip Taiwan-specific address suffixes that OSM/Nominatim doesn't understand.
+  // Strategy: progressively strip from most-specific to least-specific so we try
+  // the full address first, then fall back to road-level granularity.
+  const variants = [];
+  variants.push(query);
+
+  // Strip 樓/室/之 suffix (floor / room)
+  const noFloor = query.replace(/[\d之\-]+\s*(樓|室|F).*$/i, "").trim();
+  if (noFloor && noFloor !== query) variants.push(noFloor);
+
+  // Strip 號 + everything after
+  const noHouse = noFloor.replace(/\d+\s*號.*$/, "").trim();
+  if (noHouse && noHouse !== noFloor) variants.push(noHouse);
+
+  // Strip 鄰 (e.g. "20鄰" — not present in OSM)
+  const noLin = noHouse.replace(/\d+\s*鄰/, "").trim();
+  if (noLin && noLin !== noHouse) variants.push(noLin);
+
+  // Strip 里 (e.g. "慈祐里" — not present in OSM)
+  const noLi = noLin.replace(/[^\s,，]+里(?=[\d一-龥])/, "").trim();
+  if (noLi && noLi !== noLin) variants.push(noLi);
+
+  return variants;
+}
+
 async function geocode(query) {
-  const fallbacks = [
-    query,
-    query.replace(/\d+\s*號.*$/, "").trim(),
-    query.replace(/[\d\-之]+\s*巷.*$/, "").trim(),
-  ];
-  for (const q of fallbacks) {
+  for (const q of progressiveFallbacks(query)) {
     if (!q) continue;
     const url = new URL("https://nominatim.openstreetmap.org/search");
     url.searchParams.set("q", q);
@@ -44,12 +65,13 @@ async function geocode(query) {
     url.searchParams.set("countrycodes", "tw");
     url.searchParams.set("limit", "1");
     const r = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
-    if (!r.ok) continue;
-    const data = await r.json();
-    if (Array.isArray(data) && data.length > 0) {
-      const lat = parseFloat(data[0].lat);
-      const lng = parseFloat(data[0].lon);
-      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng, matchedQuery: q };
+      }
     }
     await sleep(1200);
   }

@@ -97,11 +97,37 @@ import MapView from "../components/MapView.astro";
         list.innerHTML = "";
         const ageFilter = getAgeBandFilter();
         const typeFilter = getTypeFilter();
+        const sortMode = (document.getElementById("f-sort") as HTMLSelectElement)?.value ?? "distance";
         const visible = state.results.filter((s) => {
           if (!typeFilter.has(s.type)) return false;
           // keep school only if at least one of its classes matches the age filter
           return s.classes.some((c) => ageFilter.has(c.age_band));
         });
+
+        if (sortMode === "probability") {
+          // Sort by user's selected priority probability (default 順位 8) across
+          // the first age-band that's enabled. Higher probability first; tie-break
+          // by distance.
+          const priorityIdx = state.userPriority != null
+            ? (state.userPriority <= 4 ? 0 : state.userPriority - 4)
+            : 4; // default 順位 8
+          const probOf = (s: SchoolResult): number => {
+            const c = s.classes.find((cc) => ageFilter.has(cc.age_band));
+            if (!c) return -1;
+            const p = c.probabilities.probs[Math.min(priorityIdx, c.probabilities.probs.length - 1)];
+            return p ?? -1;
+          };
+          visible.sort((a, b) => {
+            const diff = probOf(b) - probOf(a);
+            if (Math.abs(diff) > 1e-9) return diff;
+            return (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity);
+          });
+        }
+        // Default 'distance' sort already applied by API response (or by name-search
+        // → no spatial sort needed); but enforce in case API order drifted.
+        else if (state.lastQueryLat != null) {
+          visible.sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity));
+        }
         if (visible.length === 0) {
           list.innerHTML = '<div class="empty">無符合條件的園所</div>';
           return;
@@ -126,16 +152,14 @@ import MapView from "../components/MapView.astro";
           });
 
           // Source data array layout: index 0 = 順位1-4 lumped, index 1 = 順位5,
-          // index 2 = 順位6, index 3 = 順位7, index 4 = 順位8, index 5+ = 順位9-15
-          // (only present for 3-5歲班).
-          //
-          // Display rule (per user spec): show one combined "順位 1-7" row
-          // (sum of indices 0..3) + 順位 8 row (index 4). Hide 9+.
-          //
-          // Dropdown values are 1-8.
+          // index 2 = 順位6, ..., index N = 順位 N+4.
+          // Display: show all priorities present in the data.
           function priorityToIdx(userPriority: number): number {
             if (userPriority <= 4) return 0;       // 順位 1-4 share the lumped index
-            return userPriority - 4;                // 5→1, 6→2, 7→3, 8→4
+            return userPriority - 4;                // 5→1, 6→2, ..., 15→11
+          }
+          function idxToPriorityLabel(i: number): string {
+            return i === 0 ? "順位 1-4（優先入園）" : `順位 ${i + 4}`;
           }
 
           const classesEl = node.querySelector(".classes") as HTMLElement;
@@ -157,10 +181,7 @@ import MapView from "../components/MapView.astro";
           const detailEl = node.querySelector(".priority-detail") as HTMLElement;
           const detailNode = detailTpl.content.cloneNode(true) as DocumentFragment;
           const tablesEl = detailNode.querySelector(".priority-tables") as HTMLElement;
-          // Map userPriority → which collapsed row (0 = 1-7 lump, 1 = 順位8)
-          const highlightRowKey: "p1_7" | "p8" | null = state.userPriority == null
-            ? null
-            : (state.userPriority <= 7 ? "p1_7" : "p8");
+          const highlightIdx = state.userPriority != null ? priorityToIdx(state.userPriority) : -1;
 
           for (const c of orderedClasses) {
             const table = document.createElement("table");
@@ -175,34 +196,15 @@ import MapView from "../components/MapView.astro";
             table.appendChild(thead);
 
             const tbody = document.createElement("tbody");
-            const regs = c.registrations?.regs ?? [];
-            const probs = c.probabilities.probs;
-
-            // Row 1: 順位 1-7 合計 (sum of indices 0..3 in source data)
-            const sum1to7 = regs.slice(0, 4).reduce((acc, n) => acc + (n ?? 0), 0);
-            // Probability for the lumped row: show worst-case among 1-7
-            // (NOTE: 順位 1-4 sub-priorities share index 0's probability so
-            // it's the same value; index 1-3 are 順位 5/6/7. Take MIN across.)
-            const probs1to7 = probs.slice(0, 4).filter((p): p is number => p != null);
-            const minProb1to7 = probs1to7.length > 0 ? Math.min(...probs1to7) : null;
-            const tr1 = document.createElement("tr");
-            if (highlightRowKey === "p1_7") tr1.className = "highlight";
-            const probClass1 = minProb1to7 === 1 ? "prob-100" : (minProb1to7 === 0 ? "prob-0" : "");
-            tr1.innerHTML = `<td>順位 1-7（優先入園）</td><td class="num">${sum1to7}</td><td class="num ${probClass1}">${fmtPct(minProb1to7)}</td>`;
-            tbody.appendChild(tr1);
-
-            // Row 2: 順位 8 (index 4 in source data) — 一般幼兒
-            if (probs.length >= 5) {
-              const reg8 = regs[4] ?? null;
-              const prob8 = probs[4];
-              const tr2 = document.createElement("tr");
-              if (highlightRowKey === "p8") tr2.className = "highlight";
-              const probClass2 = prob8 === 1 ? "prob-100" : (prob8 === 0 ? "prob-0" : "");
-              tr2.innerHTML = `<td>順位 8（一般幼兒）</td><td class="num">${reg8 ?? "—"}</td><td class="num ${probClass2}">${fmtPct(prob8)}</td>`;
-              tbody.appendChild(tr2);
+            for (let i = 0; i < c.probabilities.probs.length; i++) {
+              const prob = c.probabilities.probs[i];
+              const reg = c.registrations?.regs?.[i] ?? null;
+              const tr = document.createElement("tr");
+              if (highlightIdx === i) tr.className = "highlight";
+              const probClass = prob === 1 ? "prob-100" : (prob === 0 ? "prob-0" : "");
+              tr.innerHTML = `<td>${idxToPriorityLabel(i)}</td><td class="num">${reg ?? "—"}</td><td class="num ${probClass}">${fmtPct(prob)}</td>`;
+              tbody.appendChild(tr);
             }
-            // indices ≥ 5 (順位 9 ~ 15) are intentionally hidden per spec
-
             table.appendChild(tbody);
             tablesEl.appendChild(table);
           }
@@ -351,6 +353,12 @@ import MapView from "../components/MapView.astro";
         const v = (document.getElementById("f-priority") as HTMLSelectElement).value;
         state.userPriority = v ? parseInt(v, 10) : null;
         renderResults();
+        renderMap(state.lastQueryLat, state.lastQueryLng);
+      });
+
+      document.getElementById("f-sort")!.addEventListener("change", () => {
+        renderResults();
+        renderMap(state.lastQueryLat, state.lastQueryLng);
       });
 
       // Re-render when type/age band checkboxes toggle (client-side filter)

@@ -17,13 +17,17 @@ export async function geocodeAddress(
     return { lat: parsed.lat, lng: parsed.lng, source: "cache" };
   }
 
-  // OSM in Taiwan has sparse house-number coverage but good road coverage.
-  // Try the full address first, then progressively strip house number / lane suffixes.
-  const fallbacks = [
-    address,
-    address.replace(/\d+\s*號.*$/, "").trim(),
-    address.replace(/[\d\-之]+\s*巷.*$/, "").trim(),
-  ];
+  // OSM in Taiwan has sparse house-number coverage and doesn't index 里/鄰.
+  // Progressively strip Taiwan-specific address suffixes to maximize match rate.
+  const fallbacks: string[] = [address];
+  const noFloor = address.replace(/[\d之\-]+\s*(樓|室|F).*$/i, "").trim();
+  if (noFloor && noFloor !== address) fallbacks.push(noFloor);
+  const noHouse = noFloor.replace(/\d+\s*號.*$/, "").trim();
+  if (noHouse && noHouse !== noFloor) fallbacks.push(noHouse);
+  const noLin = noHouse.replace(/\d+\s*鄰/, "").trim();
+  if (noLin && noLin !== noHouse) fallbacks.push(noLin);
+  const noLi = noLin.replace(/[^\s,，]+里(?=[\d一-龥])/, "").trim();
+  if (noLi && noLi !== noLin) fallbacks.push(noLi);
 
   let lat: number | null = null;
   let lng: number | null = null;
