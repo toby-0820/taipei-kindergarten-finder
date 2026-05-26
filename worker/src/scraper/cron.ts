@@ -11,17 +11,34 @@ export interface CronEnv {
   DISCORD_WEBHOOK_URL: string;
 }
 
-export async function runScrape(env: CronEnv): Promise<{ schools: number; snapshots: number; failures: number; mode: string }> {
-  const targets = buildTargets();
+export async function runScrape(env: CronEnv, tickIdx = 0, ticksPerCycle = 1): Promise<{ schools: number; snapshots: number; failures: number; mode: string }> {
+  // Optional batching: when ticksPerCycle > 1, only scrape 1/N of the
+  // targets per call (used by the scheduled handler to fit within
+  // Workers Free's 50-subrequest-per-invocation cap). targets are
+  // partitioned deterministically by index so the rotation covers
+  // every target across ticksPerCycle calls.
+  const allTargets = buildTargets();
+  const targets = ticksPerCycle <= 1
+    ? allTargets
+    : allTargets.filter((_, i) => i % ticksPerCycle === tickIdx);
   const fetchedAt = Date.now();
   const allParsed: ParsedSchool[] = [];
   let failures = 0;
 
-  for (const t of targets) {
-    const html = await fetchHtml(t);
+  // Fan out all fetches in parallel. 72 targets × ~500ms each = ~36s sequential,
+  // but ~2-3s wall time in parallel — fits well within the scheduled handler's
+  // 30s budget. Each fetch is self-contained (its own GET + optional postback).
+  const fetchResults = await Promise.all(
+    targets.map((t) =>
+      fetchHtml(t).then((html) => ({ t, html })).catch(() => ({ t, html: null })),
+    ),
+  );
+
+  const errors: Array<{ source: string; message: string }> = [];
+  for (const { t, html } of fetchResults) {
     if (!html) {
       failures++;
-      await logScrapeError(env.DB, `${t.url} (${t.age_band})`, "fetch failed");
+      errors.push({ source: `${t.url} (${t.age_band})`, message: "fetch failed" });
       continue;
     }
     try {
@@ -29,8 +46,12 @@ export async function runScrape(env: CronEnv): Promise<{ schools: number; snapsh
       allParsed.push(...parsed);
     } catch (e: any) {
       failures++;
-      await logScrapeError(env.DB, `${t.url} (${t.age_band})`, `parse: ${e?.message ?? String(e)}`);
+      errors.push({ source: `${t.url} (${t.age_band})`, message: `parse: ${e?.message ?? String(e)}` });
     }
+  }
+  // Log errors after all fetches done (don't block the hot path).
+  for (const err of errors) {
+    await logScrapeError(env.DB, err.source, err.message);
   }
 
   let schools = 0, snapshots = 0;

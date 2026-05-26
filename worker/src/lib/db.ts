@@ -89,31 +89,31 @@ export async function updateSchoolCoords(
 }
 
 export async function rotateSnapshot(db: D1Database, rows: SnapshotRow[]): Promise<void> {
+  // PK is (school_id, age_band, is_latest). The PK constraint means there
+  // can be AT MOST one is_latest=0 row and one is_latest=1 row per
+  // (school, band). Wrong order causes PK violation: if we UPDATE
+  // is_latest=1→0 when there is already an is_latest=0 row, both have the
+  // same PK and the UPDATE fails.
+  //
+  // Correct sequence per row:
+  //   1. DELETE the old is_latest=0 (frees the (school, band, 0) slot)
+  //   2. UPDATE existing is_latest=1 → 0 (previous "latest" → "previous")
+  //   3. INSERT this run's data as is_latest=1
+  // Batch for atomicity + fewer round trips.
+  const stmts: D1PreparedStatement[] = [];
   for (const r of rows) {
-    // demote existing is_latest=1 → 0 for this (school, age_band)
-    await db
-      .prepare(`UPDATE snapshots SET is_latest = 0 WHERE school_id = ? AND age_band = ? AND is_latest = 1`)
-      .bind(r.school_id, r.age_band)
-      .run();
-    // delete any old is_latest=0 (keep only most recent prior)
-    await db
-      .prepare(`
-        DELETE FROM snapshots
-        WHERE school_id = ? AND age_band = ? AND is_latest = 0
-          AND fetched_at < (SELECT COALESCE(MAX(fetched_at),0) FROM snapshots WHERE school_id = ? AND age_band = ? AND is_latest = 0)
-      `)
-      .bind(r.school_id, r.age_band, r.school_id, r.age_band)
-      .run();
-  }
-  for (const r of rows) {
-    await db
-      .prepare(`
+    stmts.push(
+      db.prepare(`DELETE FROM snapshots WHERE school_id=? AND age_band=? AND is_latest=0`)
+        .bind(r.school_id, r.age_band),
+      db.prepare(`UPDATE snapshots SET is_latest=0 WHERE school_id=? AND age_band=? AND is_latest=1`)
+        .bind(r.school_id, r.age_band),
+      db.prepare(`
         INSERT INTO snapshots (school_id, age_band, capacity, regs_json, reg_total, fetched_at, is_latest)
         VALUES (?,?,?,?,?,?,1)
-      `)
-      .bind(r.school_id, r.age_band, r.capacity, r.regs_json, r.reg_total, r.fetched_at)
-      .run();
+      `).bind(r.school_id, r.age_band, r.capacity, r.regs_json, r.reg_total, r.fetched_at),
+    );
   }
+  await db.batch(stmts);
 }
 
 export async function setMode(
