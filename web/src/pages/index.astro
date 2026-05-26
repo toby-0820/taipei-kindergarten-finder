@@ -11,14 +11,14 @@ import MapView from "../components/MapView.astro";
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>台北幼兒園即時查 — 公幼 / 非營利</title>
+    <title>台北幼兒園即時查 by 勇者欣梅爾</title>
     <meta name="description" content="輸入家裡位置或學校名稱，查詢台北市公幼與非營利幼兒園的招生名額、即時報名數與分順位中籤機率。資料每 3 分鐘更新。" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   </head>
   <body>
     <div class="container">
       <header class="site-header">
-        <h1>台北幼兒園即時查</h1>
+        <h1>台北幼兒園即時查 <span class="byline">by 勇者欣梅爾</span></h1>
         <p class="muted">公幼 / 非營利 招生即時資訊 · 每 3 分鐘更新</p>
       </header>
       <Banner />
@@ -399,6 +399,7 @@ import MapView from "../components/MapView.astro";
     <style>
       .site-header { margin-bottom: 1rem; }
       .site-header h1 { margin: 0; }
+      .site-header .byline { color: var(--muted); font-size: 0.65em; font-weight: 400; margin-left: 0.5rem; }
       .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
       @media (max-width: 768px) {
         .layout { grid-template-columns: 1fr; }
