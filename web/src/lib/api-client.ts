@@ -50,6 +50,22 @@ export async function search(params: {
   return r.json();
 }
 
+export interface DistrictInfo {
+  ok: boolean;
+  address?: string;
+  sect?: string;
+  lie?: string;
+  lin?: string;
+  elementarySchools?: Array<{ name: string; grade: string; addr: string; tel: string }>;
+  hint?: string;
+}
+
+export async function lookupSchoolDistrict(address: string): Promise<DistrictInfo> {
+  const r = await fetch(`${API_BASE}/api/school-district?address=${encodeURIComponent(address)}`);
+  if (!r.ok) return { ok: false };
+  return r.json();
+}
+
 export function getCurrentPosition(): Promise<{ lat: number; lng: number }> {
   return new Promise((resolve, reject) => {
     if (!("geolocation" in navigator)) {

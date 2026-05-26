@@ -1,6 +1,7 @@
 import { runScrape } from "./scraper/cron";
 import { handleSearch } from "./routes/search";
 import { handleSchool } from "./routes/school";
+import { handleSchoolDistrict } from "./routes/district";
 
 export interface Env {
   DB: D1Database;
@@ -27,6 +28,7 @@ export default {
     }
 
     if (url.pathname === "/api/search") return handleSearch(request, env);
+    if (url.pathname === "/api/school-district") return handleSchoolDistrict(request, env);
 
     const schoolMatch = url.pathname.match(/^\/api\/school\/([^/]+)$/);
     if (schoolMatch) return handleSchool(request, env, decodeURIComponent(schoolMatch[1]));

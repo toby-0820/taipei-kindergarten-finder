@@ -39,8 +39,8 @@ import MapView from "../components/MapView.astro";
     </div>
 
     <script>
-      import { search, getCurrentPosition } from "../lib/api-client";
-      import type { SearchResponse, SchoolResult } from "../lib/api-client";
+      import { search, getCurrentPosition, lookupSchoolDistrict } from "../lib/api-client";
+      import type { SearchResponse, SchoolResult, DistrictInfo } from "../lib/api-client";
       import { fmtKm, fmtPct, fmtTimeAgo } from "../lib/format";
 
       type AnyL = any;
@@ -61,12 +61,48 @@ import MapView from "../components/MapView.astro";
         homeMarker: AnyL | null;
         lastQueryLat: number | null;
         lastQueryLng: number | null;
+        districtSchoolNames: Set<string>;  // 國小 names in user's 學區
       } = {
         results: [], windowMode: "closed", fetchedAt: null,
         publicPriority: null, nonProfitPriority: null,
         map: null, markers: [], homeMarker: null,
         lastQueryLat: null, lastQueryLng: null,
+        districtSchoolNames: new Set<string>(),
       };
+
+      async function updateDistrictInfo(address: string) {
+        const el = document.getElementById("district-info")!;
+        try {
+          const info: DistrictInfo = await lookupSchoolDistrict(address);
+          if (!info.ok || !info.elementarySchools || info.elementarySchools.length === 0) {
+            state.districtSchoolNames = new Set();
+            el.style.display = "none";
+            return;
+          }
+          state.districtSchoolNames = new Set(info.elementarySchools.map((s) => s.name));
+          const schoolBadges = info.elementarySchools
+            .map((s) => `<span class="district-school">${s.name}</span>`)
+            .join("");
+          el.innerHTML =
+            `📍 您的學區資料：<strong>${info.sect} ${info.lie} ${info.lin ?? ""}</strong><br>` +
+            `🏫 對應國小學區：${schoolBadges}<br>` +
+            `<span class="muted">附幼於上述國小的「公幼」自動列入您的「學區內」順位（順位 8 一般依學區）。資料來自臺北市教育局「學區順位系統」。</span>`;
+          el.style.display = "block";
+        } catch {
+          el.style.display = "none";
+        }
+      }
+
+      function isInDistrict(schoolName: string): boolean {
+        // A 國小附幼 is in the user's 學區 if its name starts with the 國小 name.
+        // E.g. "長春國小" in 學區 → "長春國小附幼" is 學區內.
+        for (const n of state.districtSchoolNames) {
+          const base = n.replace(/國小$/, "").replace(/國民小學$/, "");
+          if (!base) continue;
+          if (schoolName.startsWith(base) && schoolName.includes("國小附幼")) return true;
+        }
+        return false;
+      }
 
       function parsePriority(v: string): PrioritySel | null {
         if (!v) return null;
@@ -197,7 +233,16 @@ import MapView from "../components/MapView.astro";
           const node = tpl.content.cloneNode(true) as DocumentFragment;
           const card = node.querySelector(".card") as HTMLElement;
           card.dataset.schoolId = s.school_id;
-          (node.querySelector(".name") as HTMLElement).textContent = s.name;
+          const nameEl = node.querySelector(".name") as HTMLElement;
+          nameEl.textContent = s.name;
+          if (isInDistrict(s.name)) {
+            const badge = document.createElement("span");
+            badge.className = "district-badge";
+            badge.textContent = "學區內";
+            badge.title = "您的住家學區內國小的附幼，列入「學區內」順位 8";
+            nameEl.appendChild(document.createTextNode(" "));
+            nameEl.appendChild(badge);
+          }
           (node.querySelector(".distance") as HTMLElement).textContent = fmtKm(s.distance_km);
           (node.querySelector(".type") as HTMLElement).textContent = s.type === "public" ? "公幼" : "非營利";
           (node.querySelector(".district") as HTMLElement).textContent = s.district;
@@ -385,7 +430,11 @@ import MapView from "../components/MapView.astro";
         locateStatus.classList.remove("error");
         locateStatus.textContent = `正在查詢地址：${addr}…`;
         lastSearch = { address: addr };
-        await runSearch({ address: addr, limit: FULL_LIMIT });
+        // Fire both lookups in parallel.
+        const [_, __] = await Promise.all([
+          runSearch({ address: addr, limit: FULL_LIMIT }),
+          updateDistrictInfo(addr),
+        ]);
       }
 
       async function runSearchBySchool() {
