@@ -42,7 +42,7 @@ import MapView from "../components/MapView.astro";
       import { search, getCurrentPosition, lookupSchoolDistrict } from "../lib/api-client";
       import type { SearchResponse, SchoolResult, DistrictInfo } from "../lib/api-client";
       import { fmtKm, fmtPct, fmtTimeAgo } from "../lib/format";
-      import { calcByPriorityWithSelf } from "../lib/probability";
+      import { calcByPriorityWithSelf, calcByPriorityWithTwinBind } from "../lib/probability";
 
       type AnyL = any;
       declare global { interface Window { L: AnyL } }
@@ -157,6 +157,21 @@ import MapView from "../components/MapView.astro";
         return schoolType === "public" ? state.publicPriority : state.nonProfitPriority;
       }
 
+      function isTwinBind(): boolean {
+        return (document.getElementById("f-twin-bind") as HTMLInputElement | null)?.checked ?? false;
+      }
+
+      // Pick the right "含我" model based on the twin-bind toggle.
+      function calcSelf(capacity: number, regs: (number | null)[], selfIdx: number) {
+        return isTwinBind()
+          ? calcByPriorityWithTwinBind(capacity, regs, selfIdx)
+          : calcByPriorityWithSelf(capacity, regs, selfIdx);
+      }
+
+      function selfLabelPrefix(): string {
+        return isTwinBind() ? "綁籤雙胞胎" : "含我";
+      }
+
       // Display label — D1 now stores accurate labels post full-rescrape.
       // Just add a thin space inside "3-5歲班" for readability.
       function ageBandLabel(_schoolType: SchoolTypeKey, ageBand: string): string {
@@ -241,7 +256,7 @@ import MapView from "../components/MapView.astro";
             // sort by 含我 prob (the realistic post-registration odds), not
             // the as-displayed-now snapshot.
             if (sel != null && c.registrations?.regs != null) {
-              const ws = calcByPriorityWithSelf(c.capacity, c.registrations.regs, idx);
+              const ws = calcSelf(c.capacity, c.registrations.regs, idx);
               return ws.probs[idx] ?? -1;
             }
             const cappedIdx = Math.min(idx, c.probabilities.probs.length - 1);
@@ -320,9 +335,9 @@ import MapView from "../components/MapView.astro";
             let probDisplay: string;
             const regs = c.registrations?.regs ?? null;
             if (userPriorityApplies && regs != null) {
-              const withSelf = calcByPriorityWithSelf(c.capacity, regs, probIdx);
+              const withSelf = calcSelf(c.capacity, regs, probIdx);
               const probSelf = withSelf.probs[probIdx];
-              probDisplay = `<span class="muted">原 ${fmtPct(prob)} →</span> <strong class="with-self">含我 ${fmtPct(probSelf)}</strong>`;
+              probDisplay = `<span class="muted">原 ${fmtPct(prob)} →</span> <strong class="with-self">${selfLabelPrefix()} ${fmtPct(probSelf)}</strong>`;
             } else {
               probDisplay = fmtPct(prob);
             }
@@ -340,7 +355,7 @@ import MapView from "../components/MapView.astro";
             const highlightIdx = selfApplies ? priorityToArrayIdx(sel2!.priority) : -1;
             const regs2 = c.registrations?.regs ?? null;
             const withSelf = (selfApplies && regs2 != null)
-              ? calcByPriorityWithSelf(c.capacity, regs2, highlightIdx)
+              ? calcSelf(c.capacity, regs2, highlightIdx)
               : null;
             // Extend row count so the user's selected priority row shows
             // even if it's past the table's natural length (e.g. 順位 9
@@ -447,9 +462,9 @@ import MapView from "../components/MapView.astro";
           const label = applies ? `第 ${sel!.priority} 順位` : `順位 8（一般）`;
           const regs = c.registrations?.regs ?? null;
           if (applies && regs != null) {
-            const ws = calcByPriorityWithSelf(c.capacity, regs, probIdx);
+            const ws = calcSelf(c.capacity, regs, probIdx);
             const ps = ws.probs[probIdx];
-            lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <span class="muted">原 ${fmtPct(prob)} →</span> <strong>含我 ${fmtPct(ps)}</strong>`);
+            lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <span class="muted">原 ${fmtPct(prob)} →</span> <strong>${selfLabelPrefix()} ${fmtPct(ps)}</strong>`);
           } else {
             lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <strong>${fmtPct(prob)}</strong>`);
           }
@@ -589,6 +604,11 @@ import MapView from "../components/MapView.astro";
       });
 
       document.getElementById("f-sort")!.addEventListener("change", () => {
+        renderResults();
+        renderMap(state.lastQueryLat, state.lastQueryLng);
+      });
+
+      document.getElementById("f-twin-bind")!.addEventListener("change", () => {
         renderResults();
         renderMap(state.lastQueryLat, state.lastQueryLng);
       });
