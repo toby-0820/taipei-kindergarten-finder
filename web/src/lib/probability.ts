@@ -17,3 +17,22 @@ export function calcByPriority(capacity: number, regs: Reg[]): ProbabilityResult
   }
   return { probs, remaining_after_all: remaining };
 }
+
+// "If I register at selfIdx, what's everyone's chance?"
+// Adds +1 to regs[selfIdx] (treating null/0 as 0), extends the array if
+// selfIdx is past the existing length, then re-runs the cascade so that
+// higher-priority counts ripple into lower-priority remaining capacity.
+export function calcByPriorityWithSelf(
+  capacity: number,
+  regs: Reg[],
+  selfIdx: number,
+): ProbabilityResult {
+  const targetLen = Math.max(regs.length, selfIdx + 1);
+  const extended: Reg[] = [];
+  for (let i = 0; i < targetLen; i++) {
+    const v = regs[i];
+    extended.push(v == null ? 0 : v);
+  }
+  extended[selfIdx] = (extended[selfIdx] as number) + 1;
+  return calcByPriority(capacity, extended);
+}

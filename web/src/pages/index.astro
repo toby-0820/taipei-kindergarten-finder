@@ -42,6 +42,7 @@ import MapView from "../components/MapView.astro";
       import { search, getCurrentPosition, lookupSchoolDistrict } from "../lib/api-client";
       import type { SearchResponse, SchoolResult, DistrictInfo } from "../lib/api-client";
       import { fmtKm, fmtPct, fmtTimeAgo } from "../lib/format";
+      import { calcByPriorityWithSelf } from "../lib/probability";
 
       type AnyL = any;
       declare global { interface Window { L: AnyL } }
@@ -235,11 +236,19 @@ import MapView from "../components/MapView.astro";
             const priority = sel?.priority ?? 8;
             const c = s.classes.find((cc) => cc.age_band === ageBand);
             if (!c) return -1;
-            const idx = Math.min(priorityToArrayIdx(priority), c.probabilities.probs.length - 1);
-            return c.probabilities.probs[idx] ?? -1;
+            const idx = priorityToArrayIdx(priority);
+            // When the user has selected a priority for this type+age band,
+            // sort by 含我 prob (the realistic post-registration odds), not
+            // the as-displayed-now snapshot.
+            if (sel != null && c.registrations?.regs != null) {
+              const ws = calcByPriorityWithSelf(c.capacity, c.registrations.regs, idx);
+              return ws.probs[idx] ?? -1;
+            }
+            const cappedIdx = Math.min(idx, c.probabilities.probs.length - 1);
+            return c.probabilities.probs[cappedIdx] ?? -1;
           };
           // `visible` was already sorted by distance ascending above.
-          const pool = visible.slice(0, 10);
+          const pool = visible.slice(0, 20);
           pool.sort((a, b) => {
             const diff = probOf(b) - probOf(a);
             if (Math.abs(diff) > 1e-9) return diff;
@@ -299,13 +308,25 @@ import MapView from "../components/MapView.astro";
             const sel = priorityFor(s.type);
             const userPriorityApplies = sel != null && sel.ageBand === c.age_band;
             const probIdx = userPriorityApplies
-              ? Math.min(priorityToArrayIdx(sel!.priority), c.probabilities.probs.length - 1)
+              ? priorityToArrayIdx(sel!.priority)
               : Math.min(4, c.probabilities.probs.length - 1);
-            const prob = c.probabilities.probs[probIdx];
+            const cappedIdx = Math.min(probIdx, c.probabilities.probs.length - 1);
+            const prob = c.probabilities.probs[cappedIdx];
             const priorityLabel = userPriorityApplies
               ? `第 ${sel!.priority} 順位`
               : `順位 8（一般幼兒）`;
-            row.innerHTML = `<span>${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}</span><span>${priorityLabel} ${fmtPct(prob)}</span>`;
+
+            // "含我" 試算: 只在用戶選了順位、且該班型有報名資料 (open mode) 時計算
+            let probDisplay: string;
+            const regs = c.registrations?.regs ?? null;
+            if (userPriorityApplies && regs != null) {
+              const withSelf = calcByPriorityWithSelf(c.capacity, regs, probIdx);
+              const probSelf = withSelf.probs[probIdx];
+              probDisplay = `<span class="muted">原 ${fmtPct(prob)} →</span> <strong class="with-self">含我 ${fmtPct(probSelf)}</strong>`;
+            } else {
+              probDisplay = fmtPct(prob);
+            }
+            row.innerHTML = `<span>${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}</span><span>${priorityLabel} ${probDisplay}</span>`;
             classesEl.appendChild(row);
           }
 
@@ -315,9 +336,19 @@ import MapView from "../components/MapView.astro";
 
           for (const c of orderedClasses) {
             const sel2 = priorityFor(s.type);
-            const highlightIdx = (sel2 != null && sel2.ageBand === c.age_band)
-              ? priorityToArrayIdx(sel2.priority)
-              : -1;
+            const selfApplies = sel2 != null && sel2.ageBand === c.age_band;
+            const highlightIdx = selfApplies ? priorityToArrayIdx(sel2!.priority) : -1;
+            const regs2 = c.registrations?.regs ?? null;
+            const withSelf = (selfApplies && regs2 != null)
+              ? calcByPriorityWithSelf(c.capacity, regs2, highlightIdx)
+              : null;
+            // Extend row count so the user's selected priority row shows
+            // even if it's past the table's natural length (e.g. 順位 9
+            // when source data only has up to 順位 8).
+            const rowCount = withSelf
+              ? Math.max(c.probabilities.probs.length, highlightIdx + 1)
+              : c.probabilities.probs.length;
+
             const table = document.createElement("table");
             table.className = "priority-table";
 
@@ -326,17 +357,26 @@ import MapView from "../components/MapView.astro";
             table.appendChild(caption);
 
             const thead = document.createElement("thead");
-            thead.innerHTML = `<tr><th>順位</th><th class="num">報名數</th><th class="num">中籤機率</th></tr>`;
+            thead.innerHTML = withSelf
+              ? `<tr><th>順位</th><th class="num">報名數</th><th class="num">中籤機率</th><th class="num">含我機率</th></tr>`
+              : `<tr><th>順位</th><th class="num">報名數</th><th class="num">中籤機率</th></tr>`;
             table.appendChild(thead);
 
             const tbody = document.createElement("tbody");
-            for (let i = 0; i < c.probabilities.probs.length; i++) {
-              const prob = c.probabilities.probs[i];
+            for (let i = 0; i < rowCount; i++) {
+              const prob = c.probabilities.probs[i] ?? null;
               const reg = c.registrations?.regs?.[i] ?? null;
               const tr = document.createElement("tr");
               if (highlightIdx === i) tr.className = "highlight";
               const probClass = prob === 1 ? "prob-100" : (prob === 0 ? "prob-0" : "");
-              tr.innerHTML = `<td>${idxToPriorityLabel(i)}</td><td class="num">${reg ?? "—"}</td><td class="num ${probClass}">${fmtPct(prob)}</td>`;
+              const baseCells = `<td>${idxToPriorityLabel(i)}</td><td class="num">${reg ?? "—"}</td><td class="num ${probClass}">${fmtPct(prob)}</td>`;
+              if (withSelf) {
+                const ps = withSelf.probs[i] ?? null;
+                const psClass = ps === 1 ? "prob-100" : (ps === 0 ? "prob-0" : "");
+                tr.innerHTML = `${baseCells}<td class="num ${psClass}">${fmtPct(ps)}</td>`;
+              } else {
+                tr.innerHTML = baseCells;
+              }
               tbody.appendChild(tr);
             }
             table.appendChild(tbody);
@@ -400,11 +440,19 @@ import MapView from "../components/MapView.astro";
           if (!classAllowed(allowed, s.type, c.age_band)) continue;
           const applies = sel != null && sel.ageBand === c.age_band;
           const probIdx = applies
-            ? Math.min(priorityToArrayIdx(sel!.priority), c.probabilities.probs.length - 1)
+            ? priorityToArrayIdx(sel!.priority)
             : Math.min(4, c.probabilities.probs.length - 1);
-          const prob = c.probabilities.probs[probIdx];
+          const cappedIdx = Math.min(probIdx, c.probabilities.probs.length - 1);
+          const prob = c.probabilities.probs[cappedIdx];
           const label = applies ? `第 ${sel!.priority} 順位` : `順位 8（一般）`;
-          lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <strong>${fmtPct(prob)}</strong>`);
+          const regs = c.registrations?.regs ?? null;
+          if (applies && regs != null) {
+            const ws = calcByPriorityWithSelf(c.capacity, regs, probIdx);
+            const ps = ws.probs[probIdx];
+            lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <span class="muted">原 ${fmtPct(prob)} →</span> <strong>含我 ${fmtPct(ps)}</strong>`);
+          } else {
+            lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <strong>${fmtPct(prob)}</strong>`);
+          }
         }
         return lines.join("<br>");
       }
