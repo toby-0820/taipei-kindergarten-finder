@@ -1,0 +1,19 @@
+name = "kindergarten-api"
+main = "worker/src/index.ts"
+compatibility_date = "2026-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kindergarten_db"
+database_id = "9d2df905-d7c4-4d31-aff9-f16aec1d74f7"
+
+[[kv_namespaces]]
+binding = "GEOCODE_CACHE"
+id = "be5f333789524d4f8d870f8ac8d57da0"
+preview_id = "8a31f6689cd546f98b2aed26672c9e9d"
+
+[triggers]
+crons = ["*/3 * * * *"]
+
+[vars]
+ENVIRONMENT = "production"
