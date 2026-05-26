@@ -22,38 +22,61 @@
     <label><input type="checkbox" id="f-age-35" checked> 3-5 歲班</label>
     <label><input type="checkbox" id="f-age-2" checked> 2 歲專班</label>
     <span class="filter-sep">|</span>
-    <select id="f-priority">
-      <option value="">我的順位（未指定）</option>
-      <optgroup label="── 3-5 歲班 ──">
-        <option value="35-1">順位 1-4：優先協助（低收/特殊境遇/原民/身障）</option>
-        <option value="35-5">順位 5：編制內教職員工子女</option>
-        <option value="35-6">順位 6：5 歲新住民／三胎家庭</option>
-        <option value="35-7">順位 7：5 歲兄姊在園</option>
-        <option value="35-8">順位 8：5 歲一般（依學區）</option>
-        <option value="35-9">順位 9：5 歲一般（不依學區）</option>
-        <option value="35-10">順位 10：4 歲三胎家庭</option>
-        <option value="35-11">順位 11：4 歲兄姊在園</option>
-        <option value="35-12">順位 12：4 歲一般</option>
-        <option value="35-13">順位 13：3 歲三胎家庭</option>
-        <option value="35-14">順位 14：3 歲兄姊在園</option>
-        <option value="35-15">順位 15：3 歲一般</option>
-      </optgroup>
-      <optgroup label="── 2 歲專班・公幼 ──">
-        <option value="2-public-1">順位 1-4：優先協助（低收/特殊境遇/原民/身障）</option>
-        <option value="2-public-5">順位 5：編制內教職員工子女</option>
-        <option value="2-public-6">順位 6：三胎家庭</option>
-        <option value="2-public-7">順位 7：兄姊在園</option>
-        <option value="2-public-8">順位 8：2 歲一般</option>
-      </optgroup>
-      <optgroup label="── 2 歲專班・非營利 ──">
-        <option value="2-np-1">順位 1-4：優先協助（低收/特殊境遇/原民/身障）</option>
-        <option value="2-np-5">順位 5：編制內教職員工子女</option>
-        <option value="2-np-6">順位 6：三胎家庭</option>
-        <option value="2-np-7">順位 7：兄姊在園</option>
-        <option value="2-np-8">順位 8：學區內一般</option>
-        <option value="2-np-9">順位 9：學區外一般</option>
-      </optgroup>
-    </select>
+    <label class="priority-pair">
+      公幼：
+      <select id="f-priority-public">
+        <option value="">我的順位</option>
+        <optgroup label="── 3-5 歲班 ──">
+          <option value="35-1">順位 1-4：優先協助</option>
+          <option value="35-5">順位 5：教職員工子女</option>
+          <option value="35-6">順位 6：5 歲新住民／三胎</option>
+          <option value="35-7">順位 7：5 歲兄姊在園</option>
+          <option value="35-8">順位 8：5 歲一般（依學區）</option>
+          <option value="35-9">順位 9：5 歲一般（不依學區）</option>
+          <option value="35-10">順位 10：4 歲三胎</option>
+          <option value="35-11">順位 11：4 歲兄姊在園</option>
+          <option value="35-12">順位 12：4 歲一般</option>
+          <option value="35-13">順位 13：3 歲三胎</option>
+          <option value="35-14">順位 14：3 歲兄姊在園</option>
+          <option value="35-15">順位 15：3 歲一般</option>
+        </optgroup>
+        <optgroup label="── 2 歲專班 ──">
+          <option value="2-1">順位 1-4：優先協助</option>
+          <option value="2-5">順位 5：教職員工子女</option>
+          <option value="2-6">順位 6：三胎家庭</option>
+          <option value="2-7">順位 7：兄姊在園</option>
+          <option value="2-8">順位 8：2 歲一般</option>
+        </optgroup>
+      </select>
+    </label>
+    <label class="priority-pair">
+      非營利：
+      <select id="f-priority-np">
+        <option value="">我的順位</option>
+        <optgroup label="── 3-5 歲班 ──">
+          <option value="35-1">順位 1-4：優先協助</option>
+          <option value="35-5">順位 5：教職員工子女</option>
+          <option value="35-6">順位 6：5 歲新住民／三胎</option>
+          <option value="35-7">順位 7：5 歲兄姊在園</option>
+          <option value="35-8">順位 8：5 歲一般（依學區）</option>
+          <option value="35-9">順位 9：5 歲一般（不依學區）</option>
+          <option value="35-10">順位 10：4 歲三胎</option>
+          <option value="35-11">順位 11：4 歲兄姊在園</option>
+          <option value="35-12">順位 12：4 歲一般</option>
+          <option value="35-13">順位 13：3 歲三胎</option>
+          <option value="35-14">順位 14：3 歲兄姊在園</option>
+          <option value="35-15">順位 15：3 歲一般</option>
+        </optgroup>
+        <optgroup label="── 2 歲專班 ──">
+          <option value="2-1">順位 1-4：優先協助</option>
+          <option value="2-5">順位 5：教職員工子女</option>
+          <option value="2-6">順位 6：三胎家庭</option>
+          <option value="2-7">順位 7：兄姊在園</option>
+          <option value="2-8">順位 8：學區內一般</option>
+          <option value="2-9">順位 9：學區外一般</option>
+        </optgroup>
+      </select>
+    </label>
     <span class="filter-sep">|</span>
     <label>排序：</label>
     <select id="f-sort">
