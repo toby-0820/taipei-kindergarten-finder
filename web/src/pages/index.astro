@@ -43,11 +43,13 @@ import MapView from "../components/MapView.astro";
       type AnyL = any;
       declare global { interface Window { L: AnyL } }
 
+      type AgeBandKey = "3-5歲班" | "2歲專班";
+
       const state: {
         results: SchoolResult[];
         windowMode: string;
         fetchedAt: number | null;
-        userPriority: number | null;
+        userPriority: { ageBand: AgeBandKey; priority: number } | null;
         map: AnyL | null;
         markers: AnyL[];
         homeMarker: AnyL | null;
@@ -58,6 +60,21 @@ import MapView from "../components/MapView.astro";
         map: null, markers: [], homeMarker: null,
         lastQueryLat: null, lastQueryLng: null,
       };
+
+      function parseUserPriority(v: string): { ageBand: AgeBandKey; priority: number } | null {
+        if (!v) return null;
+        const m = v.match(/^(35|2)-(\d+)$/);
+        if (!m) return null;
+        const ageBand: AgeBandKey = m[1] === "35" ? "3-5歲班" : "2歲專班";
+        const priority = parseInt(m[2], 10);
+        return { ageBand, priority };
+      }
+
+      function priorityToArrayIdx(priority: number): number {
+        // Source data: index 0 = 順位1-4 lumped, index N = 順位(N+4) for N>=1
+        if (priority <= 4) return 0;
+        return priority - 4;
+      }
 
       const locateStatus = document.getElementById("locate-status")!;
       let lastSearch: { lat?: number; lng?: number; address?: string; school?: string } | null = null;
@@ -104,11 +121,14 @@ import MapView from "../components/MapView.astro";
           visible.sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity));
         }
         if (sortMode === "probability") {
+          // For probability sort, we need the user's age band + priority.
+          // Default to 3-5 歲班 順位 8 if nothing selected.
+          const targetAgeBand: AgeBandKey = state.userPriority?.ageBand ?? "3-5歲班";
           const priorityIdx = state.userPriority != null
-            ? (state.userPriority <= 4 ? 0 : state.userPriority - 4)
+            ? priorityToArrayIdx(state.userPriority.priority)
             : 4;
           const probOf = (s: SchoolResult): number => {
-            const c = s.classes.find((cc) => ageFilter.has(cc.age_band));
+            const c = s.classes.find((cc) => cc.age_band === targetAgeBand);
             if (!c) return -1;
             const p = c.probabilities.probs[Math.min(priorityIdx, c.probabilities.probs.length - 1)];
             return p ?? -1;
@@ -152,13 +172,6 @@ import MapView from "../components/MapView.astro";
             return (order[a.age_band] ?? 99) - (order[b.age_band] ?? 99);
           });
 
-          // Source data array layout: index 0 = 順位1-4 lumped, index 1 = 順位5,
-          // index 2 = 順位6, ..., index N = 順位 N+4.
-          // Display: show all priorities present in the data.
-          function priorityToIdx(userPriority: number): number {
-            if (userPriority <= 4) return 0;       // 順位 1-4 share the lumped index
-            return userPriority - 4;                // 5→1, 6→2, ..., 15→11
-          }
           function idxToPriorityLabel(i: number): string {
             return i === 0 ? "順位 1-4（優先入園）" : `順位 ${i + 4}`;
           }
@@ -167,13 +180,15 @@ import MapView from "../components/MapView.astro";
           for (const c of orderedClasses) {
             const row = document.createElement("div");
             row.className = "class-row";
-            // Default to 順位 8 (一般幼兒) at index 4 when user hasn't specified.
-            const probIdx = state.userPriority != null
-              ? Math.min(priorityToIdx(state.userPriority), c.probabilities.probs.length - 1)
+            // Use userPriority ONLY if it matches this class's age band.
+            // Otherwise default to 順位 8 (一般幼兒) at index 4.
+            const userPriorityApplies = state.userPriority != null && state.userPriority.ageBand === c.age_band;
+            const probIdx = userPriorityApplies
+              ? Math.min(priorityToArrayIdx(state.userPriority!.priority), c.probabilities.probs.length - 1)
               : Math.min(4, c.probabilities.probs.length - 1);
             const prob = c.probabilities.probs[probIdx];
-            const priorityLabel = state.userPriority != null
-              ? `第 ${state.userPriority} 順位`
+            const priorityLabel = userPriorityApplies
+              ? `第 ${state.userPriority!.priority} 順位`
               : `順位 8（一般幼兒）`;
             row.innerHTML = `<span>${c.age_band}｜名額 ${c.capacity}</span><span>${priorityLabel} ${fmtPct(prob)}</span>`;
             classesEl.appendChild(row);
@@ -182,9 +197,12 @@ import MapView from "../components/MapView.astro";
           const detailEl = node.querySelector(".priority-detail") as HTMLElement;
           const detailNode = detailTpl.content.cloneNode(true) as DocumentFragment;
           const tablesEl = detailNode.querySelector(".priority-tables") as HTMLElement;
-          const highlightIdx = state.userPriority != null ? priorityToIdx(state.userPriority) : -1;
 
           for (const c of orderedClasses) {
+            // Highlight the row only if userPriority's age band matches this class.
+            const highlightIdx = (state.userPriority != null && state.userPriority.ageBand === c.age_band)
+              ? priorityToArrayIdx(state.userPriority.priority)
+              : -1;
             const table = document.createElement("table");
             table.className = "priority-table";
 
@@ -352,7 +370,7 @@ import MapView from "../components/MapView.astro";
       });
       document.getElementById("f-priority")!.addEventListener("change", () => {
         const v = (document.getElementById("f-priority") as HTMLSelectElement).value;
-        state.userPriority = v ? parseInt(v, 10) : null;
+        state.userPriority = parseUserPriority(v);
         renderResults();
         renderMap(state.lastQueryLat, state.lastQueryLng);
       });
