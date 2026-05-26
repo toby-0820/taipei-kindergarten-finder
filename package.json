@@ -1,0 +1,13 @@
+{
+  "name": "taipei-kindergarten-finder",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev:worker": "pnpm --filter worker dev",
+    "dev:web": "pnpm --filter web dev",
+    "build": "pnpm --filter web build && pnpm --filter worker build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint"
+  }
+}
