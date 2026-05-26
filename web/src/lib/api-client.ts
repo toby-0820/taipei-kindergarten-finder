@@ -28,7 +28,7 @@ export interface SearchResponse {
   query_lng: number | null;
   fetched_at: number | null;
   results: SchoolResult[];
-  location_status?: "out_of_scope";
+  location_status?: "ok" | "outside_taipei" | "out_of_scope";
   geocode_status?: "not_found";
   hint?: string;
 }

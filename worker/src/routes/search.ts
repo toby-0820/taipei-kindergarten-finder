@@ -38,16 +38,16 @@ export async function handleSearch(request: Request, env: Env): Promise<Response
     return json({ error: "lat+lng, address, or school required" }, 400);
   }
 
+  // Compute distance from Taipei centroid as a soft "is in Taipei" signal.
+  // We still return all Taipei schools — the frontend just shows a banner
+  // if the user's location is far outside the bounding box.
+  let outsideTaipei = false;
   if (queryLat != null && queryLng != null) {
     if (
       queryLat < TAIPEI_BOUNDS.latMin || queryLat > TAIPEI_BOUNDS.latMax ||
       queryLng < TAIPEI_BOUNDS.lngMin || queryLng > TAIPEI_BOUNDS.lngMax
     ) {
-      return json({
-        location_status: "out_of_scope",
-        hint: "您的位置不在台北市，本站目前僅支援台北市",
-        results: [],
-      });
+      outsideTaipei = true;
     }
   }
 
@@ -120,6 +120,7 @@ export async function handleSearch(request: Request, env: Env): Promise<Response
     query_lat: queryLat,
     query_lng: queryLng,
     fetched_at: snapshots[0]?.fetched_at ?? null,
+    location_status: outsideTaipei ? "outside_taipei" : "ok",
     results: enriched.slice(0, limit),
   });
 }

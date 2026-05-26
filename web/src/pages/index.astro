@@ -325,17 +325,15 @@ import MapView from "../components/MapView.astro";
       async function runSearch(params: { lat?: number; lng?: number; address?: string; school?: string; limit?: number }) {
         try {
           const resp: SearchResponse = await search(params);
-          if (resp.location_status === "out_of_scope") {
-            locateStatus.classList.add("error");
-            locateStatus.textContent = "您的位置不在台北市，本站目前僅支援台北市";
-            return;
-          }
           if (resp.geocode_status === "not_found") {
             locateStatus.classList.add("error");
             locateStatus.textContent = resp.hint ?? "找不到此地址";
             return;
           }
-          if (params.address && resp.query_lat != null) {
+          if (resp.location_status === "outside_taipei") {
+            locateStatus.classList.remove("error");
+            locateStatus.textContent = `提示：此位置在台北市範圍外，以下為台北市最近的園所。`;
+          } else if (params.address && resp.query_lat != null) {
             locateStatus.textContent = `已定位：${resp.query_lat.toFixed(4)}, ${resp.query_lng!.toFixed(4)}`;
           }
           state.results = resp.results;
