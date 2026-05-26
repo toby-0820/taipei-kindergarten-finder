@@ -119,12 +119,28 @@ import MapView from "../components/MapView.astro";
           (node.querySelector(".district") as HTMLElement).textContent = s.district;
           (node.querySelector(".address") as HTMLElement).textContent = s.address;
 
+          // Sort classes: 3-5歲班 first, then 2歲專班 (predictable order)
+          const orderedClasses = [...classesToShow].sort((a, b) => {
+            const order = { "3-5歲班": 0, "2歲專班": 1 };
+            return (order[a.age_band] ?? 99) - (order[b.age_band] ?? 99);
+          });
+
+          // Map userPriority (1-15) → array index. Index 0 is "順位1-4 lumped",
+          // so userPriority 1..4 → index 0; userPriority N (≥5) → index N-4.
+          function priorityToIdx(userPriority: number): number {
+            if (userPriority <= 4) return 0;
+            return userPriority - 4;
+          }
+          function idxToPriorityLabel(i: number): string {
+            return i === 0 ? "順位 1-4" : `順位 ${i + 4}`;
+          }
+
           const classesEl = node.querySelector(".classes") as HTMLElement;
-          for (const c of classesToShow) {
+          for (const c of orderedClasses) {
             const row = document.createElement("div");
             row.className = "class-row";
             const probIdx = state.userPriority != null
-              ? Math.min(state.userPriority - 1, c.probabilities.probs.length - 1)
+              ? Math.min(priorityToIdx(state.userPriority), c.probabilities.probs.length - 1)
               : c.probabilities.probs.length - 1;
             const prob = c.probabilities.probs[probIdx];
             const priorityLabel = state.userPriority != null
@@ -137,17 +153,23 @@ import MapView from "../components/MapView.astro";
           const detailEl = node.querySelector(".priority-detail") as HTMLElement;
           const detailNode = detailTpl.content.cloneNode(true) as DocumentFragment;
           const rowsEl = detailNode.querySelector(".rows") as HTMLElement;
-          for (const c of classesToShow) {
+          for (const c of orderedClasses) {
+            // Section header per age band
+            const header = document.createElement("div");
+            header.className = "age-band-header";
+            header.innerHTML = `<strong>${c.age_band}</strong>（名額 ${c.capacity}・總登記 ${c.registrations?.total ?? "—"}）`;
+            rowsEl.appendChild(header);
+
             for (let i = 0; i < c.probabilities.probs.length; i++) {
               const prob = c.probabilities.probs[i];
               const reg = c.registrations?.regs?.[i] ?? null;
               const row = document.createElement("div");
-              row.className = "priority-row" + (state.userPriority === i + 1 ? " highlight" : "");
+              const highlightIdx = state.userPriority != null
+                ? priorityToIdx(state.userPriority)
+                : -1;
+              row.className = "priority-row" + (highlightIdx === i ? " highlight" : "");
               const probClass = prob === 1 ? "prob-100" : (prob === 0 ? "prob-0" : "");
-              const label = i === 0 ? `順位 1-4 (${c.age_band})` : `順位 ${i + 4} (${c.age_band})`;
-              // Actually the first column is "順位1-4 lumped" in source data.
-              // Subsequent columns are individual: i=1 → 順位5, i=2 → 順位6, ..., i=N → 順位 N+4
-              row.innerHTML = `<span>${label}</span><span>${reg ?? "—"}</span><span class="${probClass}">${fmtPct(prob)}</span>`;
+              row.innerHTML = `<span>${idxToPriorityLabel(i)}</span><span>${reg ?? "—"}</span><span class="${probClass}">${fmtPct(prob)}</span>`;
               rowsEl.appendChild(row);
             }
           }
