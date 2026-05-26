@@ -259,13 +259,47 @@ import MapView from "../components/MapView.astro";
           if (s.lat == null || s.lng == null) continue;
           const m = L.circleMarker([s.lat, s.lng], { radius: 6, color: "#2563eb", fillOpacity: 0.7 })
             .addTo(state.map)
-            .bindPopup(`<strong>${s.name}</strong><br>${fmtKm(s.distance_km)}`);
+            .bindPopup(buildPopup(s));
           (m as any).schoolId = s.school_id;
+          // Also open popup on mouseover (Leaflet default is click only).
+          m.on("mouseover", function (this: any) { this.openPopup(); });
           state.markers.push(m);
           bounds.push([s.lat, s.lng]);
         }
         if (queryLat != null && queryLng != null) bounds.push([queryLat, queryLng]);
         if (bounds.length > 1) state.map.fitBounds(bounds, { padding: [40, 40] });
+      }
+
+      function buildPopup(s: SchoolResult): string {
+        const typeLabel = s.type === "public" ? "公幼" : "非營利";
+        const lines: string[] = [
+          `<strong>${escapeHtml(s.name)}</strong>`,
+          `<span class="muted">${typeLabel}・${escapeHtml(s.district)}・${fmtKm(s.distance_km)}</span>`,
+        ];
+        const userPriority = state.userPriority;
+        // For each class shown (filter by age-band checkboxes), display
+        // the probability of the user's selected priority if its age band
+        // matches; otherwise default to 順位 8 (一般).
+        const ageFilter = getAgeBandFilter();
+        for (const c of s.classes) {
+          if (!ageFilter.has(c.age_band)) continue;
+          const userPriorityApplies = userPriority != null && userPriority.ageBand === c.age_band;
+          const probIdx = userPriorityApplies
+            ? Math.min(priorityToArrayIdx(userPriority!.priority), c.probabilities.probs.length - 1)
+            : Math.min(4, c.probabilities.probs.length - 1);
+          const prob = c.probabilities.probs[probIdx];
+          const label = userPriorityApplies
+            ? `第 ${userPriority!.priority} 順位`
+            : `順位 8（一般）`;
+          lines.push(`${c.age_band}｜名額 ${c.capacity}｜${label} <strong>${fmtPct(prob)}</strong>`);
+        }
+        return lines.join("<br>");
+      }
+
+      function escapeHtml(s: string): string {
+        return s.replace(/[&<>"']/g, (c) => (
+          { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!
+        ));
       }
 
       function highlightOnMap(id: string) {
