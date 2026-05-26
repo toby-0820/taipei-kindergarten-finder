@@ -1,16 +1,269 @@
 ---
 import "../styles/global.css";
+import SearchBar from "../components/SearchBar.astro";
+import Banner from "../components/Banner.astro";
+import ResultList from "../components/ResultList.astro";
+import ResultCard from "../components/ResultCard.astro";
+import PriorityDetail from "../components/PriorityDetail.astro";
+import MapView from "../components/MapView.astro";
 ---
 <html lang="zh-Hant">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>台北幼兒園即時查 — 公幼 / 非營利</title>
+    <meta name="description" content="輸入家裡位置或學校名稱，查詢台北市公幼與非營利幼兒園的招生名額、即時報名數與分順位中籤機率。資料每 3 分鐘更新。" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   </head>
   <body>
     <div class="container">
-      <h1>台北幼兒園即時查</h1>
-      <p class="muted">Loading…</p>
+      <header class="site-header">
+        <h1>台北幼兒園即時查</h1>
+        <p class="muted">公幼 / 非營利 招生即時資訊 · 每 3 分鐘更新</p>
+      </header>
+      <Banner />
+      <SearchBar />
+      <div class="layout">
+        <section class="left"><ResultList /></section>
+        <section class="right"><MapView /></section>
+      </div>
+      <ResultCard />
+      <PriorityDetail />
+      <footer class="site-footer">
+        <p>資料來源：臺北市政府教育局 <a href="https://kid.tp.edu.tw" target="_blank" rel="noopener">kid.tp.edu.tw</a>、<a href="https://npkid.tp.edu.tw" target="_blank" rel="noopener">npkid.tp.edu.tw</a></p>
+        <p>本站為非官方資訊整理，最終以官方公告為準。機率為依目前報名/名額即時推算。</p>
+      </footer>
     </div>
+
+    <script>
+      import { search, getCurrentPosition } from "../lib/api-client";
+      import type { SearchResponse, SchoolResult } from "../lib/api-client";
+      import { fmtKm, fmtPct, fmtTimeAgo } from "../lib/format";
+
+      type AnyL = any;
+      declare global { interface Window { L: AnyL } }
+
+      const state: {
+        results: SchoolResult[];
+        windowMode: string;
+        fetchedAt: number | null;
+        userPriority: number | null;
+        map: AnyL | null;
+        markers: AnyL[];
+        homeMarker: AnyL | null;
+      } = {
+        results: [], windowMode: "closed", fetchedAt: null, userPriority: null,
+        map: null, markers: [], homeMarker: null,
+      };
+
+      const locateStatus = document.getElementById("locate-status")!;
+      let lastSearch: { lat?: number; lng?: number; school?: string } | null = null;
+
+      function initMap() {
+        const L = window.L;
+        state.map = L.map("map-view").setView([25.06, 121.55], 12);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OpenStreetMap",
+          maxZoom: 19,
+        }).addTo(state.map);
+      }
+
+      function clearMarkers() {
+        if (!state.map) return;
+        state.markers.forEach((m) => state.map.removeLayer(m));
+        state.markers = [];
+        if (state.homeMarker) { state.map.removeLayer(state.homeMarker); state.homeMarker = null; }
+      }
+
+      function renderResults() {
+        const list = document.getElementById("result-list")!;
+        list.innerHTML = "";
+        if (state.results.length === 0) {
+          list.innerHTML = '<div class="empty">無符合條件的園所</div>';
+          return;
+        }
+        const tpl = document.getElementById("result-card-template") as HTMLTemplateElement;
+        const detailTpl = document.getElementById("priority-detail-template") as HTMLTemplateElement;
+        for (const s of state.results) {
+          const node = tpl.content.cloneNode(true) as DocumentFragment;
+          const card = node.querySelector(".card") as HTMLElement;
+          card.dataset.schoolId = s.school_id;
+          (node.querySelector(".name") as HTMLElement).textContent = s.name;
+          (node.querySelector(".distance") as HTMLElement).textContent = fmtKm(s.distance_km);
+          (node.querySelector(".type") as HTMLElement).textContent = s.type === "public" ? "公幼" : "非營利";
+          (node.querySelector(".district") as HTMLElement).textContent = s.district;
+          (node.querySelector(".address") as HTMLElement).textContent = s.address;
+
+          const classesEl = node.querySelector(".classes") as HTMLElement;
+          for (const c of s.classes) {
+            const row = document.createElement("div");
+            row.className = "class-row";
+            const probIdx = state.userPriority != null
+              ? Math.min(state.userPriority - 1, c.probabilities.probs.length - 1)
+              : c.probabilities.probs.length - 1;
+            const prob = c.probabilities.probs[probIdx];
+            const priorityLabel = state.userPriority != null
+              ? `第 ${state.userPriority} 順位`
+              : `最低順位`;
+            row.innerHTML = `<span>${c.age_band}｜名額 ${c.capacity}</span><span>${priorityLabel} ${fmtPct(prob)}</span>`;
+            classesEl.appendChild(row);
+          }
+
+          const detailEl = node.querySelector(".priority-detail") as HTMLElement;
+          const detailNode = detailTpl.content.cloneNode(true) as DocumentFragment;
+          const rowsEl = detailNode.querySelector(".rows") as HTMLElement;
+          for (const c of s.classes) {
+            for (let i = 0; i < c.probabilities.probs.length; i++) {
+              const prob = c.probabilities.probs[i];
+              const reg = c.registrations?.regs?.[i] ?? null;
+              const row = document.createElement("div");
+              row.className = "priority-row" + (state.userPriority === i + 1 ? " highlight" : "");
+              const probClass = prob === 1 ? "prob-100" : (prob === 0 ? "prob-0" : "");
+              const label = i === 0 ? `順位 1-4 (${c.age_band})` : `順位 ${i + 4} (${c.age_band})`;
+              // Actually the first column is "順位1-4 lumped" in source data.
+              // Subsequent columns are individual: i=1 → 順位5, i=2 → 順位6, ..., i=N → 順位 N+4
+              row.innerHTML = `<span>${label}</span><span>${reg ?? "—"}</span><span class="${probClass}">${fmtPct(prob)}</span>`;
+              rowsEl.appendChild(row);
+            }
+          }
+          detailEl.appendChild(detailNode);
+
+          const toggle = node.querySelector(".toggle-detail") as HTMLButtonElement;
+          toggle.addEventListener("click", () => {
+            detailEl.style.display = detailEl.style.display === "none" ? "block" : "none";
+            toggle.textContent = detailEl.style.display === "none" ? "展開順位明細 ▾" : "收起 ▴";
+          });
+
+          card.addEventListener("mouseenter", () => highlightOnMap(s.school_id));
+          list.appendChild(node);
+        }
+      }
+
+      function renderMap(queryLat: number | null, queryLng: number | null) {
+        if (!state.map) return;
+        const L = window.L;
+        clearMarkers();
+        if (queryLat != null && queryLng != null) {
+          state.homeMarker = L.marker([queryLat, queryLng])
+            .addTo(state.map)
+            .bindPopup("您的位置");
+        }
+        const bounds: [number, number][] = [];
+        for (const s of state.results) {
+          if (s.lat == null || s.lng == null) continue;
+          const m = L.circleMarker([s.lat, s.lng], { radius: 6, color: "#2563eb", fillOpacity: 0.7 })
+            .addTo(state.map)
+            .bindPopup(`<strong>${s.name}</strong><br>${fmtKm(s.distance_km)}`);
+          (m as any).schoolId = s.school_id;
+          state.markers.push(m);
+          bounds.push([s.lat, s.lng]);
+        }
+        if (queryLat != null && queryLng != null) bounds.push([queryLat, queryLng]);
+        if (bounds.length > 1) state.map.fitBounds(bounds, { padding: [40, 40] });
+      }
+
+      function highlightOnMap(id: string) {
+        for (const m of state.markers) {
+          if ((m as any).schoolId === id) m.openPopup();
+        }
+      }
+
+      function updateBanner() {
+        const banner = document.getElementById("banner")!;
+        const text = document.getElementById("banner-text")!;
+        const age = document.getElementById("data-age")!;
+        if (state.windowMode === "closed") {
+          banner.style.display = "block";
+          text.textContent = "目前非報名期。以下為招生名額公告，報名數與機率將於開放後顯示。";
+        } else if (state.windowMode === "drawn") {
+          banner.style.display = "block";
+          text.textContent = "今年抽籤已完成。以下顯示最終資料。";
+        } else {
+          banner.style.display = "none";
+        }
+        age.textContent = `資料更新於 ${fmtTimeAgo(state.fetchedAt)}`;
+      }
+
+      async function runSearchByLocation() {
+        locateStatus.classList.remove("error");
+        locateStatus.textContent = "正在取得您的位置…";
+        let pos;
+        try {
+          pos = await getCurrentPosition();
+        } catch (e: any) {
+          locateStatus.classList.add("error");
+          locateStatus.textContent = "無法取得位置：" + (e?.message ?? "請允許瀏覽器存取定位");
+          return;
+        }
+        locateStatus.textContent = `已取得位置：${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`;
+        const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
+        lastSearch = { lat: pos.lat, lng: pos.lng };
+        await runSearch({ lat: pos.lat, lng: pos.lng, age_band: ageBand || undefined });
+      }
+
+      async function runSearchBySchool() {
+        const name = (document.getElementById("school-input") as HTMLInputElement).value.trim();
+        if (!name) return;
+        const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
+        lastSearch = { school: name };
+        await runSearch({ school: name, age_band: ageBand || undefined });
+      }
+
+      async function runSearch(params: { lat?: number; lng?: number; school?: string; age_band?: any }) {
+        try {
+          const resp: SearchResponse = await search(params);
+          if (resp.location_status === "out_of_scope") {
+            locateStatus.classList.add("error");
+            locateStatus.textContent = "您的位置不在台北市，本站目前僅支援台北市";
+            return;
+          }
+          state.results = resp.results;
+          state.windowMode = resp.window_mode;
+          state.fetchedAt = resp.fetched_at;
+          renderResults();
+          renderMap(resp.query_lat, resp.query_lng);
+          updateBanner();
+        } catch (e) {
+          console.error(e);
+          alert("查詢失敗，請稍後再試");
+        }
+      }
+
+      // Bootstrap: load Leaflet, then wire events
+      const leafletScript = document.createElement("script");
+      leafletScript.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      leafletScript.crossOrigin = "";
+      leafletScript.onload = () => initMap();
+      document.head.appendChild(leafletScript);
+
+      document.getElementById("locate-btn")!.addEventListener("click", runSearchByLocation);
+      document.getElementById("school-btn")!.addEventListener("click", runSearchBySchool);
+      document.getElementById("school-input")!.addEventListener("keydown", (e) => {
+        if ((e as KeyboardEvent).key === "Enter") runSearchBySchool();
+      });
+      document.getElementById("f-priority")!.addEventListener("change", () => {
+        const v = (document.getElementById("f-priority") as HTMLSelectElement).value;
+        state.userPriority = v ? parseInt(v, 10) : null;
+        renderResults();
+      });
+
+      // Auto-refresh every 3 minutes if there are results
+      setInterval(() => {
+        if (state.results.length > 0 && lastSearch) {
+          const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
+          runSearch({ ...lastSearch, age_band: ageBand || undefined });
+        }
+      }, 180_000);
+    </script>
+
+    <style>
+      .site-header { margin-bottom: 1rem; }
+      .site-header h1 { margin: 0; }
+      .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      @media (max-width: 768px) {
+        .layout { grid-template-columns: 1fr; }
+      }
+      .site-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
+    </style>
   </body>
 </html>
