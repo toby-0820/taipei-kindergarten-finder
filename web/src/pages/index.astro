@@ -62,35 +62,68 @@ import MapView from "../components/MapView.astro";
         lastQueryLat: number | null;
         lastQueryLng: number | null;
         districtSchoolNames: Set<string>;  // 國小 names in user's 學區
+        districtInfo: DistrictInfo | null;  // last successful address → district lookup
       } = {
         results: [], windowMode: "closed", fetchedAt: null,
         publicPriority: null, nonProfitPriority: null,
         map: null, markers: [], homeMarker: null,
         lastQueryLat: null, lastQueryLng: null,
         districtSchoolNames: new Set<string>(),
+        districtInfo: null,
       };
 
       async function updateDistrictInfo(address: string) {
-        const el = document.getElementById("district-info")!;
         try {
           const info: DistrictInfo = await lookupSchoolDistrict(address);
           if (!info.ok || !info.elementarySchools || info.elementarySchools.length === 0) {
             state.districtSchoolNames = new Set();
-            el.style.display = "none";
-            return;
+            state.districtInfo = null;
+          } else {
+            state.districtSchoolNames = new Set(info.elementarySchools.map((s) => s.name));
+            state.districtInfo = info;
           }
-          state.districtSchoolNames = new Set(info.elementarySchools.map((s) => s.name));
-          const schoolBadges = info.elementarySchools
-            .map((s) => `<span class="district-school">${s.name}</span>`)
-            .join("");
-          el.innerHTML =
-            `📍 您的學區資料：<strong>${info.sect} ${info.lie} ${info.lin ?? ""}</strong><br>` +
-            `🏫 對應國小學區：${schoolBadges}<br>` +
-            `<span class="muted">附幼於上述國小的「公幼」自動列入您的「學區內」順位（順位 8 一般依學區）。資料來自臺北市教育局「學區順位系統」。</span>`;
-          el.style.display = "block";
         } catch {
-          el.style.display = "none";
+          state.districtSchoolNames = new Set();
+          state.districtInfo = null;
         }
+        renderDistrictPanel();
+      }
+
+      function renderDistrictPanel() {
+        const el = document.getElementById("district-info")!;
+        const info = state.districtInfo;
+        if (!info || !info.elementarySchools || info.elementarySchools.length === 0) {
+          el.style.display = "none";
+          return;
+        }
+        const publicBadges = info.elementarySchools
+          .map((s) => `<span class="district-school">${escapeHtml(s.name)}附幼</span>`)
+          .join("");
+
+        // 非營利不分學區,但「同行政區戶籍」於抽籤時優先(順位 8 vs 順位 9 跨區)。
+        // 列出同行政區所有非營利,按距離排序;若無位置資訊則照名稱排。
+        const npInDistrict = state.results
+          .filter((s) => s.type === "non_profit" && s.district === info.sect)
+          .sort((a, b) => {
+            const da = a.distance_km ?? Infinity;
+            const db = b.distance_km ?? Infinity;
+            if (da !== db) return da - db;
+            return a.name.localeCompare(b.name, "zh-Hant");
+          });
+        const npLine = npInDistrict.length > 0
+          ? `🏫 同行政區非營利（共 ${npInDistrict.length} 家）：` +
+            npInDistrict.map((s) => `<span class="district-school np">${escapeHtml(s.name)}</span>`).join("") +
+            `<br>`
+          : state.results.length > 0
+            ? `<span class="muted">（${escapeHtml(info.sect)}目前無非營利幼兒園資料）</span><br>`
+            : "";
+
+        el.innerHTML =
+          `📍 您的學區資料：<strong>${escapeHtml(info.sect)} ${escapeHtml(info.lie)} ${escapeHtml(info.lin ?? "")}</strong><br>` +
+          `🏫 學區內公幼（順位 8 一般依學區）：${publicBadges}<br>` +
+          npLine +
+          `<span class="muted">公幼附幼於上述國小者列入「學區內」順位 8。非營利幼兒園無學區制,但「同行政區戶籍」於抽籤時優先於跨區（順位 8 vs 順位 9）。資料來自臺北市教育局「學區順位系統」。</span>`;
+        el.style.display = "block";
       }
 
       function isInDistrict(schoolName: string): boolean {
@@ -421,6 +454,9 @@ import MapView from "../components/MapView.astro";
         }
         locateStatus.textContent = `已取得位置：${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`;
         lastSearch = { lat: pos.lat, lng: pos.lng };
+        // 定位搜尋沒地址,清掉前次學區資料避免錯誤殘留
+        state.districtInfo = null;
+        state.districtSchoolNames = new Set();
         await runSearch({ lat: pos.lat, lng: pos.lng, limit: FULL_LIMIT });
       }
 
@@ -441,6 +477,8 @@ import MapView from "../components/MapView.astro";
         const name = (document.getElementById("school-input") as HTMLInputElement).value.trim();
         if (!name) return;
         lastSearch = { school: name };
+        state.districtInfo = null;
+        state.districtSchoolNames = new Set();
         await runSearch({ school: name, limit: FULL_LIMIT });
       }
 
@@ -465,6 +503,7 @@ import MapView from "../components/MapView.astro";
           state.lastQueryLng = resp.query_lng;
           renderResults();
           renderMap(resp.query_lat, resp.query_lng);
+          renderDistrictPanel();
           updateBanner();
         } catch (e) {
           console.error(e);

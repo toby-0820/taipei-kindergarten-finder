@@ -106,7 +106,9 @@
   <div id="district-info" class="district-info" style="display:none"></div>
 </div>
 
-<style>
+<style is:global>
+  /* is:global because badges are injected dynamically via innerHTML
+     from index.astro, so they don't get this component's astro-cid scope. */
   .district-info {
     margin-top: 0.5rem;
     padding: 0.5rem 0.75rem;
@@ -114,14 +116,20 @@
     border-left: 3px solid var(--accent);
     border-radius: 4px;
     font-size: 0.85rem;
-    line-height: 1.5;
+    line-height: 1.6;
   }
   .district-info .district-school {
+    display: inline-block;
     background: #c7d2fe;
+    color: #3730a3;
     padding: 1px 6px;
     border-radius: 3px;
     font-weight: 600;
-    margin: 0 2px;
+    margin: 2px;
+  }
+  .district-info .district-school.np {
+    background: #fed7aa;
+    color: #9a3412;
   }
 </style>
 
