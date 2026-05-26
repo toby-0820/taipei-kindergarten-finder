@@ -1,0 +1,18 @@
+* { box-sizing: border-box; }
+:root {
+  --bg: #fafaf8;
+  --text: #1a1a1a;
+  --accent: #2563eb;
+  --border: #e5e7eb;
+  --muted: #6b7280;
+  --warn-bg: #fef3c7;
+  --warn-fg: #92400e;
+  --good: #16a34a;
+  --bad: #dc2626;
+  font-family: -apple-system, "PingFang TC", "Noto Sans TC", sans-serif;
+}
+body { margin: 0; background: var(--bg); color: var(--text); }
+a { color: var(--accent); }
+.container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+.banner-warn { background: var(--warn-bg); color: var(--warn-fg); padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
+.muted { color: var(--muted); }
