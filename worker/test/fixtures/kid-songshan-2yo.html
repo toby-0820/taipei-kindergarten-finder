@@ -1,0 +1,361 @@
+
+
+<!DOCTYPE html>
+<html lang="zh" style="" class=" js flexbox flexboxlegacy canvas canvastext webgl no-touch geolocation postmessage websqldatabase indexeddb hashchange history draganddrop websockets rgba hsla multiplebgs backgroundsize borderimage borderradius boxshadow textshadow opacity cssanimations csscolumns cssgradients cssreflections csstransforms csstransforms3d csstransitions fontface generatedcontent video audio localstorage sessionstorage webworkers applicationcache svg inlinesvg smil svgclippaths">
+
+<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><title>
+	臺北市115學年度公立幼兒園招生即時資訊揭示 - 
+</title><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="./Scripts/modernizr-2.6.2.js"></script>
+    <link href="Content/Site.css" rel="stylesheet" /><link href="favicon.ico" rel="shortcut icon" type="image/x-icon" /><meta name="viewport" content="width=device-width" /><link href="Content/reset.css" rel="stylesheet" /><link href="Content/bootstrap.css" rel="stylesheet" /><link href="Content/Board.css" rel="stylesheet" />
+
+    <meta http-equiv="refresh" content="180">
+    <style>
+
+
+.tb1
+{
+	CURSOR: default;
+	BACKGROUND-COLOR: #ffffff ;
+}
+
+.tb2
+{
+	CURSOR: default;
+	BACKGROUND-COLOR: #f0f0f0 ;
+}
+
+
+
+.fixed {
+  position: fixed;
+  right: auto;
+  left: 10px;
+  bottom: 45%;
+  z-index: 99;
+}
+
+.fixed-btn a {
+  font-size: 18px;
+  background-color: #ff7e67;
+  color: #fff;
+  border-radius: 20px;
+  padding: 10px 35px;
+  -webkit-transition: .3s;
+  transition: .3s;
+  display: inline-block;
+}
+
+.fixed-btn a:hover {
+  background-color: #fc6346;
+  -webkit-transition: .3s;
+  transition: .3s;
+}
+
+@media (max-width: 768px) {
+  .fixed {
+    bottom: 61%;
+  }
+}
+
+@media (max-width: 767px) {
+  .fixed {
+    left: auto;
+    right: 0;
+    bottom: 35%;
+    text-align: right;
+    right: -10px;
+  }
+  .fixed-btn a {
+    padding: 8px 20px;
+    border-radius: 20px 0 0 20px;
+  }
+}
+
+
+.v_classes {
+    color:black;
+    font-size:xx-large;
+    font-weight:bold;
+    text-align: center;
+}
+
+.v_title {
+    color:red;
+    font-size:larger;
+    font-weight:bold;
+    text-align: left;
+}
+
+.v_text {
+    color:blue;
+    font-size:larger;
+    font-weight:bold;
+    text-align: left;
+}
+
+
+.swal-wide{
+    width:660px !important;
+}
+
+
+ .swal2-content .v_title{
+        padding:10px 5px; width: 80px;color: #a96e28;vertical-align: top;
+    }
+    
+.swal2-content .v_text{
+        padding:10px 0px;
+    }
+    
+.swal2-content .v_text span{
+        color: black
+    }
+    
+.swal2-content .table_title{
+        background-color: #a96e28;padding: 10px;
+        border-radius: 2px;border-radius: 2px;font-size: 1.4em;font-weight: bold;color: #fff;
+    }
+
+    </style>
+    <link rel="stylesheet" type="text/css" href="/Content/sweetalert2.css">
+
+    <script src="/Scripts/sweetalert2.js"></script>
+
+
+    <script type="text/javascript">
+
+        function MM_openBrWindow(theURL, winName, win_width, win_height) {
+            var PosX = (screen.width - win_width) / 2;
+            var PosY = (screen.Height - win_height) / 2;
+            features = "width=" + win_width + ",height=" + win_height + ",top=" + PosY + ",left=" + PosX;
+            var newwin = window.open(theURL, winName, features);
+        }
+
+        function show2() {
+            swal({
+                title: '順序身份參照表',
+                html: '<table><tr><td class="table_title" colspan="2">2歲專班</td></tr><tr><td class="v_title"><span>順序1:</span></td><td class="v_text"><span>2歲法定需要協助幼兒：低收入戶子女；中低收入戶子女；原住民；特殊境遇家庭子女；父、母或監護人為中度以上身心障礙者子女。</span></td></tr><tr><td class="v_title"><span>順序2:</span></td><td class="v_text"><span>2歲經直轄市、縣（市）社政主管機關安置於本市之幼兒。</span></td></tr><tr><td class="v_title"><span>順序3:</span></td><td class="v_text"><span>2歲危機家庭幼兒。</span></td></tr><tr><td class="v_title"><span>順序4:</span></td><td class="v_text"><span>2歲兄弟姊妹為身心障礙且就讀同一幼兒園。</span></td></tr><tr class="tb2"><td class="v_title"><span>順序5:</span></td><td class="v_text"><span>2歲編制內現職教職員工子女</span></td></tr><tr><td class="v_title"><span>順序6:</span></td><td class="v_text"><span>2歲幼兒為3胎家庭子女</span></td></tr><tr class="tb2"><td class="v_title"><span>順序7:</span><span></td><td class="v_text"><span>2歲幼兒之兄或姊就讀該幼兒園或該國小 1 或 2 年級</span></td></tr><tr><td class="v_title"><span>順序8:</span><span></td><td class="v_text"><span>2歲一般幼兒</span></td></tr></table>',
+                showCancelButton: false,
+                confirmButtonText: '確定',
+                cancelButtonText: '',
+                customClass: 'swal-wide'
+            });
+        }
+
+        function show() {
+            //alert("1234");
+           // swal("1234");
+
+            swal({
+                title: '順序身份參照表',
+                html: '<table><tr><td class="table_title" colspan="2">3-5歲班</td></tr><tr><td class="v_title"><span>順序1:</span></td><td class="v_text"><span>法定需要協助幼兒：低收入戶子女；中低收入戶子女；原住民；特殊境遇家庭子女；父、母或監護人為中度以上身心障礙者子女。</span></td></tr></tr><tr><td class="v_title"><span>順序2:</span></td><td class="v_text"><span>經直轄市、縣（市）社政主管機關安置於本市之幼兒。</span></td></tr></tr><tr><td class="v_title"><span>順序3:</span></td><td class="v_text"><span>危機家庭幼兒。</span></td></tr></tr><tr><td class="v_title"><span>順序4:</span></td><td class="v_text"><span>兄弟姊妹為身心障礙且就讀同一幼兒園。</span></td></tr><tr class="tb2"><td class="v_title"><span>順序5:</span></td><td class="v_text"><span>編制內現職教職員工子女</span></td></tr><tr><td class="v_title"><span>順序6:</span></td><td class="v_text"><span>5歲新住民子女；5歲幼兒為3胎家庭子女。</span></td></tr><tr class="tb2"><td class="v_title"><span>順序7:</span><span></td><td class="v_text"><span>5歲幼兒之兄或姊就讀該幼兒園或該國小 1 或 2 年級</span></td></tr><tr><td class="v_title"><span>順序8:</span><span></td><td class="v_text"><span>5歲一般幼兒(依學區限制登記)</span></td></tr><tr class="tb2"><td class="v_title"><span>順序9:</span><span></td><td class="v_text"><span>5歲一般幼兒(未依學區限制登記)</span></td></tr><tr><td class="v_title"><span>順序10:</span><span></td><td class="v_text"><span>4歲幼兒為3胎家庭子女</span></td></tr><tr class="tb2"><td class="v_title"><span>順序11:</span><span></td><td class="v_text"><span>4 歲幼兒之兄或姊就讀該幼兒園或該國小 1 或 2 年級</span></td></tr><tr><td class="v_title"><span>順序12:</span><span></td><td class="v_text"><span>4 歲一般幼兒</span></td></tr><tr class="tb2"><td class="v_title"><span>順序13:</span><span></td><td class="v_text"><span>3歲幼兒為3胎家庭子女</span></td></tr><tr><td class="v_title"><span>順序14:</span><span></td><td class="v_text"><span>3 歲幼兒之兄或姊就讀該幼兒園或該國小 1 或 2 年級</span></td></tr><tr class="tb2"><td class="v_title"><span>順序15:</span><span></td><td class="v_text"><span>3 歲一般幼兒</span></td></tr></table>',
+                showCancelButton: false,
+                confirmButtonText: '確定',
+                cancelButtonText: '',
+                customClass: 'swal-wide'
+            });
+        }
+
+    </script>
+</head>
+<body>
+    <form method="post" action="./Board.aspx?dist=63000010" id="ctl01">
+<div class="aspNetHidden">
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" />
+<input type="hidden" name="__LASTFOCUS" id="__LASTFOCUS" value="" />
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="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" />
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['ctl01'];
+if (!theForm) {
+    theForm = document.ctl01;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<script src="/WebResource.axd?d=pynGkmcFUV13He1Qd6_TZLN8qW2h14RPuVf8iUueFJWHBgOD94kBzFeo0nB0bAr_xWy1Hfo7USVgt-Iazc2J6w2&amp;t=638902059720898773" type="text/javascript"></script>
+
+
+<script src="Scripts/WebForms/MsAjax/MicrosoftAjax.js" type="text/javascript"></script>
+<script type="text/javascript">
+//<![CDATA[
+if (typeof(Sys) === 'undefined') throw new Error('ASP.NET Ajax 用戶端架構無法載入。');
+//]]>
+</script>
+
+<script src="Scripts/WebForms/MsAjax/MicrosoftAjaxWebForms.js" type="text/javascript"></script>
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="1849B8DF" />
+	<input type="hidden" name="__SCROLLPOSITIONX" id="__SCROLLPOSITIONX" value="0" />
+	<input type="hidden" name="__SCROLLPOSITIONY" id="__SCROLLPOSITIONY" value="0" />
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="GADY0/t1Ka83I8kuncBGLbTZU5LhtCkv8MQNcnVjKOB92OmqHXNwIel624O8gFKCWebHNeRaYU2Ci4q+uCbyhvEnW7b4DL9b3Ym1hoV1NxsVm7W2W3CzJqCSO9YogoxoQ3GAAXLry0ZwFtWQb0cLFmxMQ9d8mK5lHOlPDC1C+YeWZTvPUTxXrTZjXaDzLuQiBmFQ1/62lPVtXNfdRQjwcdDU5wHM1EwUJUBQ72UcokgcF4ySZhe/WfSVtiaF1dNNiFSNxIcgDH4o9IdsKxLGqE74UKjk49UXKdeT/XQG33g=" />
+</div>
+    <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ctl00$ctl11', 'ctl01', [], [], [], 90, 'ctl00');
+//]]>
+</script>
+
+    <header>
+    </header>
+    <div id="body">
+        
+    <section class="featured">
+        <div class="content-wrapper">
+            <hgroup class="title">
+                <h1>臺北市115學年度公立幼兒園招生即時資訊揭示</h1>
+                <h2>-  松山區</h2>
+                <h2>  【2歲專班】</h2>
+            </hgroup>
+        </div>
+    </section>
+
+        <section class="content-wrapper main-content clear-fix">
+            
+
+    
+
+     <div class="fixed" style="text-align:center;">
+        <div class="fixed-btn" style="margin-top:10px;">
+            <a href="#ref" onclick="show()" style="background:rgba(255, 126, 103, .5);color:black;">
+                參照表<br>(3-5歲)
+            </a>
+
+        </div>
+                 <div class="fixed-btn" style="margin-top:10px;">
+            <a href="#ref" onclick="show2()" style="background:rgba(255, 126, 103, .5);color:black;">
+                參照表<br>(2歲)
+            </a>
+
+        </div>
+        
+     
+        
+    </div>
+
+
+
+                <div style="float:left; text-align:left; font-size:large;font-weight:bold">招生辦理階段(本頁資訊每3分鐘定時更新)  <!--  (本頁資訊每3分鐘定時更新) -->
+
+            
+                </div>
+                <div style="width:100%;float:left;text-align:center;">
+                    <div class="line">
+                        <table id="MainContent_classType" class="inputTxt">
+                            <tbody>
+                                <tr>
+                                    <td>請選擇班別:
+  <span id="MainContent_classType" class="inputTxt" style="display:inline-block;border-width:0px;font-size:Small;font-weight:bold;"><input id="MainContent_classType_0" type="radio" name="ctl00$MainContent$classType" value="2" onclick="javascript:setTimeout(&#39;__doPostBack(\&#39;ctl00$MainContent$classType$0\&#39;,\&#39;\&#39;)&#39;, 0)" /><label for="MainContent_classType_0">3-5歲班</label><input id="MainContent_classType_1" type="radio" name="ctl00$MainContent$classType" value="1" checked="checked" /><label for="MainContent_classType_1">2歲專班</label></span>
+                                    </td>
+                                </tr>
+                          
+                                <tr>
+                                    <td>
+ 
+                                                            
+                            
+                                    </td>
+                                    <td class="alignTxt">
+                                        
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="back">
+                        <a href="Default.aspx">重新選擇行政區</a>
+                    </div>
+                </div>
+
+
+
+
+
+    <div style="float:none;width: 100%;overflow-x: scroll;">
+
+    <input type="hidden" name="ctl00$MainContent$F_Year" id="MainContent_F_Year" value="115" />
+
+    <input type="hidden" name="ctl00$MainContent$disth" id="MainContent_disth" value="63000010" />
+    <input type="hidden" name="ctl00$MainContent$distnameh" id="MainContent_distnameh" value="松山區" />
+    <input type="hidden" name="ctl00$MainContent$classname" id="MainContent_classname" value="2歲專班" />
+    <input type="hidden" name="ctl00$MainContent$registDate" id="MainContent_registDate" value="【2026-06-02】 (本頁資訊每3分鐘定時更新)" />
+    <input type="hidden" name="ctl00$MainContent$registStepStr" id="MainContent_registStepStr" value="招生辦理階段(本頁資訊每3分鐘定時更新)" />
+
+    <div>
+	<table cellspacing="0" rules="all" class="boardTable" Wrap="true" border="1" id="MainContent_GridView1" style="font-size:Large;width:100%;border-collapse:collapse;">
+		<tr class="tb0" style="font-size:Smaller;">
+			<th scope="col">
+                    項次　
+                </th><th scope="col">幼兒園　</th><th scope="col">公告缺額　</th><th scope="col">順序1-4　</th><th scope="col">順序5　</th><th scope="col">順序6　</th><th scope="col">順序7　</th><th scope="col">順序8　</th><th scope="col">總登記人數　</th>
+		</tr><tr class="tb1" style="font-size:Medium;">
+			<td>
+                    <span id="MainContent_GridView1_sn_0">1</span>
+                </td><td>松山國小附幼</td><td align="center">32</td><td align="center">2</td><td align="center">1</td><td align="center">1</td><td align="center">2</td><td align="center">25</td><td align="center">31</td>
+		</tr><tr class="tb2" style="font-size:Medium;">
+			<td>
+                    <span id="MainContent_GridView1_sn_1">2</span>
+                </td><td>西松國小附幼</td><td align="center">31</td><td align="center">3</td><td align="center">3</td><td align="center">4</td><td align="center">4</td><td align="center">67</td><td align="center">81</td>
+		</tr><tr class="tb1" style="font-size:Medium;">
+			<td>
+                    <span id="MainContent_GridView1_sn_2">3</span>
+                </td><td>民權國小附幼</td><td align="center">31</td><td align="center">2</td><td align="center">1</td><td align="center">3</td><td align="center">9</td><td align="center">46</td><td align="center">61</td>
+		</tr><tr class="tb2" style="font-size:Medium;">
+			<td>
+                    <span id="MainContent_GridView1_sn_3">4</span>
+                </td><td>民族國小附幼</td><td align="center">16</td><td align="center">1</td><td align="center">2</td><td align="center">4</td><td align="center">2</td><td align="center">17</td><td align="center">26</td>
+		</tr><tr class="tb1" style="font-size:Medium;">
+			<td>
+                    <span id="MainContent_GridView1_sn_4">5</span>
+                </td><td>三民國小附幼</td><td align="center">16</td><td align="center">1</td><td align="center">0</td><td align="center">0</td><td align="center">1</td><td align="center">9</td><td align="center">11</td>
+		</tr><tr class="tb2" style="font-size:Medium;">
+			<td>
+                    <span id="MainContent_GridView1_sn_5">6</span>
+                </td><td>市立松山幼兒園</td><td align="center">31</td><td align="center">1</td><td align="center">0</td><td align="center">7</td><td align="center">3</td><td align="center">37</td><td align="center">48</td>
+		</tr>
+	</table>
+</div>
+        </div>
+
+        </section>
+    </div>
+    <footer>
+        <div class="container">
+                <div class="row">
+                    <div class="col-md-12 copyright">
+                        <p>Copyright ©2024 臺北市政府教育局 . All rights reserved. Design by 辛太科技</p>
+                        <p>建議瀏覽器IE10以上、Firefox或Chrome，建議瀏覽解析度為1024 x 768 以上</p>
+                    </div>
+                </div>
+        </div>
+    </footer>
+    
+
+<script type="text/javascript">
+//<![CDATA[
+
+theForm.oldSubmit = theForm.submit;
+theForm.submit = WebForm_SaveScrollPositionSubmit;
+
+theForm.oldOnSubmit = theForm.onsubmit;
+theForm.onsubmit = WebForm_SaveScrollPositionOnSubmit;
+
+theForm.oldOnLoad = window.onload;
+window.onload = WebForm_RestoreScrollPosition;
+//]]>
+</script>
+</form>
+</body>
+</html>
