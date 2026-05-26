@@ -13,7 +13,7 @@ export async function handleSearch(request: Request, env: Env): Promise<Response
   const address = url.searchParams.get("address")?.trim() || null;
   const school = url.searchParams.get("school")?.trim() || null;
   const ageBand = url.searchParams.get("age_band")?.trim() || null;
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20", 10) || 20, 50);
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20", 10) || 20, 300);
 
   let queryLat: number | null = latParam != null ? parseFloat(latParam) : null;
   let queryLng: number | null = lngParam != null ? parseFloat(lngParam) : null;

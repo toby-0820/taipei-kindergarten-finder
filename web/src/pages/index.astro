@@ -271,6 +271,10 @@ import MapView from "../components/MapView.astro";
         age.textContent = `資料更新於 ${fmtTimeAgo(state.fetchedAt)}`;
       }
 
+      // Request all schools so client-side sort by distance / probability works
+      // against the full dataset, not just top-20-by-distance.
+      const FULL_LIMIT = 300;
+
       async function runSearchByLocation() {
         locateStatus.classList.remove("error");
         locateStatus.textContent = "正在取得您的位置…";
@@ -284,7 +288,7 @@ import MapView from "../components/MapView.astro";
         }
         locateStatus.textContent = `已取得位置：${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`;
         lastSearch = { lat: pos.lat, lng: pos.lng };
-        await runSearch({ lat: pos.lat, lng: pos.lng });
+        await runSearch({ lat: pos.lat, lng: pos.lng, limit: FULL_LIMIT });
       }
 
       async function runSearchByAddress() {
@@ -293,17 +297,17 @@ import MapView from "../components/MapView.astro";
         locateStatus.classList.remove("error");
         locateStatus.textContent = `正在查詢地址：${addr}…`;
         lastSearch = { address: addr };
-        await runSearch({ address: addr });
+        await runSearch({ address: addr, limit: FULL_LIMIT });
       }
 
       async function runSearchBySchool() {
         const name = (document.getElementById("school-input") as HTMLInputElement).value.trim();
         if (!name) return;
         lastSearch = { school: name };
-        await runSearch({ school: name });
+        await runSearch({ school: name, limit: FULL_LIMIT });
       }
 
-      async function runSearch(params: { lat?: number; lng?: number; address?: string; school?: string }) {
+      async function runSearch(params: { lat?: number; lng?: number; address?: string; school?: string; limit?: number }) {
         try {
           const resp: SearchResponse = await search(params);
           if (resp.location_status === "out_of_scope") {

@@ -42,6 +42,8 @@ export async function search(params: {
   limit?: number;
 }): Promise<SearchResponse> {
   const qs = new URLSearchParams();
+  // Default to a large limit so client can sort across the full dataset.
+  if (params.limit == null) qs.set("limit", "300");
   for (const [k, v] of Object.entries(params)) if (v != null) qs.set(k, String(v));
   const r = await fetch(`${API_BASE}/api/search?${qs}`);
   if (!r.ok) throw new Error(`search failed: ${r.status}`);
