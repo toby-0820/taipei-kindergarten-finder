@@ -18,8 +18,11 @@ import MapView from "../components/MapView.astro";
   <body>
     <div class="container">
       <header class="site-header">
-        <h1>台北幼兒園即時查 <span class="byline">by 勇者欣梅爾</span></h1>
-        <p class="muted">公幼 / 非營利 招生即時資訊 · 每 3 分鐘更新</p>
+        <img src="/logo.jpg" alt="勇者欣梅爾" class="logo" width="64" height="64" />
+        <div>
+          <h1>台北幼兒園即時查 <span class="byline">by 勇者欣梅爾</span></h1>
+          <p class="muted">公幼 / 非營利 招生即時資訊 · 每 3 分鐘更新</p>
+        </div>
       </header>
       <Banner />
       <SearchBar />
@@ -397,8 +400,10 @@ import MapView from "../components/MapView.astro";
     </script>
 
     <style>
-      .site-header { margin-bottom: 1rem; }
+      .site-header { margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem; }
+      .site-header .logo { border-radius: 50%; object-fit: cover; flex-shrink: 0; }
       .site-header h1 { margin: 0; }
+      .site-header p { margin: 0.25rem 0 0; }
       .site-header .byline { color: var(--muted); font-size: 0.65em; font-weight: 400; margin-left: 0.5rem; }
       .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
       @media (max-width: 768px) {
