@@ -39,6 +39,10 @@ export async function geocodeAddress(
     url.searchParams.set("format", "json");
     url.searchParams.set("countrycodes", "tw");
     url.searchParams.set("limit", "1");
+    // Bias + bound to Taipei City rectangle so that ambiguous road names
+    // (e.g., 重陽路 exists in both 南港 and 竹山) resolve to the Taipei one.
+    url.searchParams.set("viewbox", "121.45,25.21,121.67,24.95");
+    url.searchParams.set("bounded", "1");
 
     let resp: Response;
     try {
