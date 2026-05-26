@@ -17,33 +17,47 @@ export async function geocodeAddress(
     return { lat: parsed.lat, lng: parsed.lng, source: "cache" };
   }
 
-  const url = new URL("https://nominatim.openstreetmap.org/search");
-  url.searchParams.set("q", address);
-  url.searchParams.set("format", "json");
-  url.searchParams.set("countrycodes", "tw");
-  url.searchParams.set("limit", "1");
+  // OSM in Taiwan has sparse house-number coverage but good road coverage.
+  // Try the full address first, then progressively strip house number / lane suffixes.
+  const fallbacks = [
+    address,
+    address.replace(/\d+\s*號.*$/, "").trim(),
+    address.replace(/[\d\-之]+\s*巷.*$/, "").trim(),
+  ];
 
-  let resp: Response;
-  try {
-    resp = await fetch(url.toString(), {
-      headers: { "User-Agent": USER_AGENT, "accept": "application/json" },
-    });
-  } catch {
-    return null;
+  let lat: number | null = null;
+  let lng: number | null = null;
+
+  for (const q of fallbacks) {
+    if (!q) continue;
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("q", q);
+    url.searchParams.set("format", "json");
+    url.searchParams.set("countrycodes", "tw");
+    url.searchParams.set("limit", "1");
+
+    let resp: Response;
+    try {
+      resp = await fetch(url.toString(), {
+        headers: { "User-Agent": USER_AGENT, "accept": "application/json" },
+      });
+    } catch { continue; }
+    if (!resp.ok) continue;
+
+    let data: Array<{ lat: string; lon: string }>;
+    try { data = await resp.json(); } catch { continue; }
+    if (!Array.isArray(data) || data.length === 0) continue;
+
+    const parsedLat = parseFloat(data[0].lat);
+    const parsedLng = parseFloat(data[0].lon);
+    if (isNaN(parsedLat) || isNaN(parsedLng)) continue;
+
+    lat = parsedLat;
+    lng = parsedLng;
+    break;
   }
-  if (!resp.ok) return null;
 
-  let data: Array<{ lat: string; lon: string }>;
-  try {
-    data = await resp.json();
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(data) || data.length === 0) return null;
-
-  const lat = parseFloat(data[0].lat);
-  const lng = parseFloat(data[0].lon);
-  if (isNaN(lat) || isNaN(lng)) return null;
+  if (lat == null || lng == null) return null;
 
   const result: GeocodeResult = { lat, lng, source: "nominatim" };
   await kv.put(`geo:${key}`, JSON.stringify(result), { expirationTtl: 30 * 86400 });

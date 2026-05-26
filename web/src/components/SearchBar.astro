@@ -5,7 +5,12 @@
     <button id="locate-btn" class="locate-btn" title="瀏覽器會詢問定位權限">
       📍 用我目前位置搜尋
     </button>
-    <span class="or">或</span>
+  </div>
+  <div class="row">
+    <input id="address-input" type="text" placeholder="輸入家裡地址（如：台北市中山區民生東路二段147號）" autocomplete="off">
+    <button id="address-btn">用此地址搜尋</button>
+  </div>
+  <div class="row">
     <input id="school-input" type="text" placeholder="輸入學校名稱（如：中山、大龍）" autocomplete="off">
     <button id="school-btn">查詢學校</button>
   </div>
@@ -13,11 +18,10 @@
   <div class="filters">
     <label><input type="checkbox" id="f-public" checked> 公幼</label>
     <label><input type="checkbox" id="f-nonprofit" checked> 非營利</label>
-    <select id="f-age">
-      <option value="">全部班別</option>
-      <option value="3-5歲班">3-5 歲班</option>
-      <option value="2歲專班">2 歲專班</option>
-    </select>
+    <span class="filter-sep">|</span>
+    <label><input type="checkbox" id="f-age-35" checked> 3-5 歲班</label>
+    <label><input type="checkbox" id="f-age-2" checked> 2 歲專班</label>
+    <span class="filter-sep">|</span>
     <select id="f-priority">
       <option value="">我的順位（未指定）</option>
       <option value="1">第 1 順位</option>
@@ -38,14 +42,15 @@
 
 <style>
   .searchbar { background: white; padding: 1rem; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 1rem; }
-  .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
+  .row:last-of-type { margin-bottom: 0; }
   .row input { flex: 1; min-width: 200px; padding: 0.5rem; font-size: 1rem; border: 1px solid var(--border); border-radius: 4px; }
-  .row button { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
-  .locate-btn { background: var(--accent); color: white; }
-  #school-btn { background: var(--border); color: var(--text); }
-  .or { color: var(--muted); padding: 0 0.5rem; }
+  .row button { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; white-space: nowrap; }
+  .locate-btn { background: var(--accent); color: white; width: 100%; }
+  #address-btn, #school-btn { background: var(--border); color: var(--text); }
   .locate-status { font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em; }
   .locate-status.error { color: var(--bad); }
   .filters { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem; align-items: center; }
   .filters select { padding: 0.25rem 0.5rem; }
+  .filter-sep { color: var(--muted); }
 </style>

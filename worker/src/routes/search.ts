@@ -1,6 +1,7 @@
 import { getAllSchools, getLatestSnapshots, getMode } from "../lib/db";
 import { haversineKm } from "../lib/distance";
 import { calcByPriority } from "../lib/probability";
+import { geocodeAddress } from "../lib/geocode";
 import type { Env } from "../index";
 
 const TAIPEI_BOUNDS = { latMin: 24.95, latMax: 25.21, lngMin: 121.45, lngMax: 121.67 };
@@ -9,6 +10,7 @@ export async function handleSearch(request: Request, env: Env): Promise<Response
   const url = new URL(request.url);
   const latParam = url.searchParams.get("lat");
   const lngParam = url.searchParams.get("lng");
+  const address = url.searchParams.get("address")?.trim() || null;
   const school = url.searchParams.get("school")?.trim() || null;
   const ageBand = url.searchParams.get("age_band")?.trim() || null;
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20", 10) || 20, 50);
@@ -18,8 +20,22 @@ export async function handleSearch(request: Request, env: Env): Promise<Response
   if (queryLat != null && isNaN(queryLat)) queryLat = null;
   if (queryLng != null && isNaN(queryLng)) queryLng = null;
 
+  // Address → geocode → lat/lng (server-side via Nominatim, KV-cached)
+  if (address && (queryLat == null || queryLng == null)) {
+    const geo = await geocodeAddress(address, env.GEOCODE_CACHE);
+    if (!geo) {
+      return json({
+        geocode_status: "not_found",
+        hint: "找不到此地址，請輸入更完整的地址（例：台北市中山區民生東路二段147號）",
+        results: [],
+      });
+    }
+    queryLat = geo.lat;
+    queryLng = geo.lng;
+  }
+
   if ((queryLat == null || queryLng == null) && !school) {
-    return json({ error: "lat+lng (from browser geolocation) or school required" }, 400);
+    return json({ error: "lat+lng, address, or school required" }, 400);
   }
 
   if (queryLat != null && queryLng != null) {

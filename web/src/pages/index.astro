@@ -51,13 +51,30 @@ import MapView from "../components/MapView.astro";
         map: AnyL | null;
         markers: AnyL[];
         homeMarker: AnyL | null;
+        lastQueryLat: number | null;
+        lastQueryLng: number | null;
       } = {
         results: [], windowMode: "closed", fetchedAt: null, userPriority: null,
         map: null, markers: [], homeMarker: null,
+        lastQueryLat: null, lastQueryLng: null,
       };
 
       const locateStatus = document.getElementById("locate-status")!;
-      let lastSearch: { lat?: number; lng?: number; school?: string } | null = null;
+      let lastSearch: { lat?: number; lng?: number; address?: string; school?: string } | null = null;
+
+      function getAgeBandFilter(): Set<"3-5歲班" | "2歲專班"> {
+        const allowed = new Set<"3-5歲班" | "2歲專班">();
+        if ((document.getElementById("f-age-35") as HTMLInputElement).checked) allowed.add("3-5歲班");
+        if ((document.getElementById("f-age-2") as HTMLInputElement).checked) allowed.add("2歲專班");
+        return allowed;
+      }
+
+      function getTypeFilter(): Set<"public" | "non_profit"> {
+        const allowed = new Set<"public" | "non_profit">();
+        if ((document.getElementById("f-public") as HTMLInputElement).checked) allowed.add("public");
+        if ((document.getElementById("f-nonprofit") as HTMLInputElement).checked) allowed.add("non_profit");
+        return allowed;
+      }
 
       function initMap() {
         const L = window.L;
@@ -78,13 +95,21 @@ import MapView from "../components/MapView.astro";
       function renderResults() {
         const list = document.getElementById("result-list")!;
         list.innerHTML = "";
-        if (state.results.length === 0) {
+        const ageFilter = getAgeBandFilter();
+        const typeFilter = getTypeFilter();
+        const visible = state.results.filter((s) => {
+          if (!typeFilter.has(s.type)) return false;
+          // keep school only if at least one of its classes matches the age filter
+          return s.classes.some((c) => ageFilter.has(c.age_band));
+        });
+        if (visible.length === 0) {
           list.innerHTML = '<div class="empty">無符合條件的園所</div>';
           return;
         }
         const tpl = document.getElementById("result-card-template") as HTMLTemplateElement;
         const detailTpl = document.getElementById("priority-detail-template") as HTMLTemplateElement;
-        for (const s of state.results) {
+        for (const s of visible) {
+          const classesToShow = s.classes.filter((c) => ageFilter.has(c.age_band));
           const node = tpl.content.cloneNode(true) as DocumentFragment;
           const card = node.querySelector(".card") as HTMLElement;
           card.dataset.schoolId = s.school_id;
@@ -95,7 +120,7 @@ import MapView from "../components/MapView.astro";
           (node.querySelector(".address") as HTMLElement).textContent = s.address;
 
           const classesEl = node.querySelector(".classes") as HTMLElement;
-          for (const c of s.classes) {
+          for (const c of classesToShow) {
             const row = document.createElement("div");
             row.className = "class-row";
             const probIdx = state.userPriority != null
@@ -112,7 +137,7 @@ import MapView from "../components/MapView.astro";
           const detailEl = node.querySelector(".priority-detail") as HTMLElement;
           const detailNode = detailTpl.content.cloneNode(true) as DocumentFragment;
           const rowsEl = detailNode.querySelector(".rows") as HTMLElement;
-          for (const c of s.classes) {
+          for (const c of classesToShow) {
             for (let i = 0; i < c.probabilities.probs.length; i++) {
               const prob = c.probabilities.probs[i];
               const reg = c.registrations?.regs?.[i] ?? null;
@@ -148,8 +173,13 @@ import MapView from "../components/MapView.astro";
             .addTo(state.map)
             .bindPopup("您的位置");
         }
+        const ageFilter = getAgeBandFilter();
+        const typeFilter = getTypeFilter();
+        const visible = state.results.filter((s) =>
+          typeFilter.has(s.type) && s.classes.some((c) => ageFilter.has(c.age_band)),
+        );
         const bounds: [number, number][] = [];
-        for (const s of state.results) {
+        for (const s of visible) {
           if (s.lat == null || s.lng == null) continue;
           const m = L.circleMarker([s.lat, s.lng], { radius: 6, color: "#2563eb", fillOpacity: 0.7 })
             .addTo(state.map)
@@ -196,20 +226,27 @@ import MapView from "../components/MapView.astro";
           return;
         }
         locateStatus.textContent = `已取得位置：${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`;
-        const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
         lastSearch = { lat: pos.lat, lng: pos.lng };
-        await runSearch({ lat: pos.lat, lng: pos.lng, age_band: ageBand || undefined });
+        await runSearch({ lat: pos.lat, lng: pos.lng });
+      }
+
+      async function runSearchByAddress() {
+        const addr = (document.getElementById("address-input") as HTMLInputElement).value.trim();
+        if (!addr) return;
+        locateStatus.classList.remove("error");
+        locateStatus.textContent = `正在查詢地址：${addr}…`;
+        lastSearch = { address: addr };
+        await runSearch({ address: addr });
       }
 
       async function runSearchBySchool() {
         const name = (document.getElementById("school-input") as HTMLInputElement).value.trim();
         if (!name) return;
-        const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
         lastSearch = { school: name };
-        await runSearch({ school: name, age_band: ageBand || undefined });
+        await runSearch({ school: name });
       }
 
-      async function runSearch(params: { lat?: number; lng?: number; school?: string; age_band?: any }) {
+      async function runSearch(params: { lat?: number; lng?: number; address?: string; school?: string }) {
         try {
           const resp: SearchResponse = await search(params);
           if (resp.location_status === "out_of_scope") {
@@ -217,9 +254,19 @@ import MapView from "../components/MapView.astro";
             locateStatus.textContent = "您的位置不在台北市，本站目前僅支援台北市";
             return;
           }
+          if (resp.geocode_status === "not_found") {
+            locateStatus.classList.add("error");
+            locateStatus.textContent = resp.hint ?? "找不到此地址";
+            return;
+          }
+          if (params.address && resp.query_lat != null) {
+            locateStatus.textContent = `已定位：${resp.query_lat.toFixed(4)}, ${resp.query_lng!.toFixed(4)}`;
+          }
           state.results = resp.results;
           state.windowMode = resp.window_mode;
           state.fetchedAt = resp.fetched_at;
+          state.lastQueryLat = resp.query_lat;
+          state.lastQueryLng = resp.query_lng;
           renderResults();
           renderMap(resp.query_lat, resp.query_lng);
           updateBanner();
@@ -237,6 +284,10 @@ import MapView from "../components/MapView.astro";
       document.head.appendChild(leafletScript);
 
       document.getElementById("locate-btn")!.addEventListener("click", runSearchByLocation);
+      document.getElementById("address-btn")!.addEventListener("click", runSearchByAddress);
+      document.getElementById("address-input")!.addEventListener("keydown", (e) => {
+        if ((e as KeyboardEvent).key === "Enter") runSearchByAddress();
+      });
       document.getElementById("school-btn")!.addEventListener("click", runSearchBySchool);
       document.getElementById("school-input")!.addEventListener("keydown", (e) => {
         if ((e as KeyboardEvent).key === "Enter") runSearchBySchool();
@@ -247,11 +298,20 @@ import MapView from "../components/MapView.astro";
         renderResults();
       });
 
+      // Re-render when type/age band checkboxes toggle (client-side filter)
+      for (const id of ["f-public", "f-nonprofit", "f-age-35", "f-age-2"]) {
+        document.getElementById(id)!.addEventListener("change", () => {
+          if (state.results.length > 0) {
+            renderResults();
+            renderMap(state.lastQueryLat, state.lastQueryLng);
+          }
+        });
+      }
+
       // Auto-refresh every 3 minutes if there are results
       setInterval(() => {
         if (state.results.length > 0 && lastSearch) {
-          const ageBand = (document.getElementById("f-age") as HTMLSelectElement).value as any;
-          runSearch({ ...lastSearch, age_band: ageBand || undefined });
+          runSearch({ ...lastSearch });
         }
       }, 180_000);
     </script>

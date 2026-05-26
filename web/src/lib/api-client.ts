@@ -29,12 +29,14 @@ export interface SearchResponse {
   fetched_at: number | null;
   results: SchoolResult[];
   location_status?: "out_of_scope";
+  geocode_status?: "not_found";
   hint?: string;
 }
 
 export async function search(params: {
   lat?: number;
   lng?: number;
+  address?: string;
   school?: string;
   age_band?: "3-5歲班" | "2歲專班";
   limit?: number;
