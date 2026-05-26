@@ -277,7 +277,13 @@ import MapView from "../components/MapView.astro";
           bounds.push([s.lat, s.lng]);
         }
         if (queryLat != null && queryLng != null) bounds.push([queryLat, queryLng]);
-        if (bounds.length > 1) state.map.fitBounds(bounds, { padding: [40, 40] });
+        // When user has a location, zoom into the neighbourhood (~1 km radius).
+        // Otherwise (school-name search), fit all markers.
+        if (queryLat != null && queryLng != null) {
+          state.map.setView([queryLat, queryLng], 15);
+        } else if (bounds.length > 1) {
+          state.map.fitBounds(bounds, { padding: [40, 40] });
+        }
       }
 
       function buildPopup(s: SchoolResult): string {
