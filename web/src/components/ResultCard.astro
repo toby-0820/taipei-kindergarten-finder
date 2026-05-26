@@ -1,0 +1,35 @@
+---
+---
+<template id="result-card-template">
+  <article class="card" data-school-id="">
+    <header class="card-head">
+      <h3 class="name"></h3>
+      <span class="distance"></span>
+    </header>
+    <div class="meta">
+      <span class="type"></span>
+      <span class="district"></span>
+      <span class="address"></span>
+    </div>
+    <div class="classes"></div>
+    <button class="toggle-detail">展開順位明細 ▾</button>
+    <div class="priority-detail" style="display:none"></div>
+  </article>
+</template>
+
+<style>
+  .card { background: white; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; }
+  .card.highlight { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .card-head h3 { margin: 0; font-size: 1.05rem; }
+  .distance { color: var(--accent); font-weight: 600; }
+  .meta { font-size: 0.85rem; color: var(--muted); margin: 0.25rem 0; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .classes { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.5rem; }
+  .class-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 0.25rem 0; border-top: 1px solid var(--border); }
+  .toggle-detail { margin-top: 0.5rem; background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; }
+  .priority-detail { margin-top: 0.5rem; }
+  .priority-row { display: grid; grid-template-columns: 1fr 80px 80px; gap: 0.5rem; padding: 0.25rem 0; font-size: 0.9rem; }
+  .priority-row.highlight { background: rgba(37,99,235,0.08); font-weight: 600; }
+  .prob-100 { color: var(--good); }
+  .prob-0 { color: var(--bad); }
+</style>
