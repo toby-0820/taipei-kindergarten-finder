@@ -1,4 +1,5 @@
-import { runScrape } from "./scraper/cron";
+// Minimal worker entrypoint for integration tests — excludes the scraper
+// (which pulls in node-html-parser, a CJS module incompatible with Miniflare's Vite pipeline).
 import { handleSearch } from "./routes/search";
 import { handleSchool } from "./routes/school";
 
@@ -15,15 +16,9 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health") {
-      return jsonResponse({ ok: true });
-    }
-
-    if (url.pathname === "/api/admin/run-cron" && request.method === "POST") {
-      if (request.headers.get("x-admin-token") !== env.ADMIN_TOKEN) {
-        return new Response("Forbidden", { status: 403 });
-      }
-      const result = await runScrape(env);
-      return jsonResponse({ ok: true, ran_at: Date.now(), ...result });
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+      });
     }
 
     if (url.pathname === "/api/search") return handleSearch(request, env);
@@ -33,14 +28,4 @@ export default {
 
     return new Response("Not Found", { status: 404 });
   },
-
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runScrape(env));
-  },
 };
-
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-  });
-}
