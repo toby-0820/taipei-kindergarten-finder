@@ -1,3 +1,5 @@
+import { runScrape } from "./scraper/cron";
+
 export interface Env {
   DB: D1Database;
   GEOCODE_CACHE: KVNamespace;
@@ -9,15 +11,29 @@ export interface Env {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
     if (url.pathname === "/api/health") {
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { "content-type": "application/json" },
-      });
+      return jsonResponse({ ok: true });
     }
+
+    if (url.pathname === "/api/admin/run-cron" && request.method === "POST") {
+      if (request.headers.get("x-admin-token") !== env.ADMIN_TOKEN) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const result = await runScrape(env);
+      return jsonResponse({ ok: true, ran_at: Date.now(), ...result });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    // cron entry — filled in by later task
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runScrape(env));
   },
 };
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/json" },
+  });
+}
