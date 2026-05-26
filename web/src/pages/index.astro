@@ -12,7 +12,7 @@ import MapView from "../components/MapView.astro";
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>台北幼兒園即時查 by 勇者欣梅爾</title>
-    <meta name="description" content="輸入家裡位置或學校名稱，查詢台北市公幼與非營利幼兒園的招生名額、即時報名數與分順位中籤機率。資料每 3 分鐘更新。" />
+    <meta name="description" content="輸入家裡位置或學校名稱，查詢台北市公幼與非營利幼兒園的招生名額、即時報名數與分順位中籤機率。資料每 9 分鐘更新。" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   </head>
   <body>
@@ -21,7 +21,7 @@ import MapView from "../components/MapView.astro";
         <img src="/logo.jpg" alt="勇者欣梅爾" class="logo" width="64" height="64" />
         <div>
           <h1>台北幼兒園即時查 <span class="byline">by 勇者欣梅爾</span></h1>
-          <p class="muted">公幼 / 非營利 招生即時資訊 · 每 3 分鐘更新</p>
+          <p class="muted">公幼 / 非營利 招生即時資訊 · 每 9 分鐘更新</p>
         </div>
       </header>
       <Banner />
@@ -623,12 +623,13 @@ import MapView from "../components/MapView.astro";
         });
       }
 
-      // Auto-refresh every 3 minutes if there are results
+      // Auto-refresh every 9 minutes (matching the cron's 3-batch rotation
+      // cycle on Workers Free).
       setInterval(() => {
         if (state.results.length > 0 && lastSearch) {
           runSearch({ ...lastSearch });
         }
-      }, 180_000);
+      }, 540_000);
     </script>
 
     <style>
