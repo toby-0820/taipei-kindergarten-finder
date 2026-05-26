@@ -266,7 +266,8 @@ import MapView from "../components/MapView.astro";
         const bounds: [number, number][] = [];
         for (const s of visible) {
           if (s.lat == null || s.lng == null) continue;
-          const m = L.circleMarker([s.lat, s.lng], { radius: 6, color: "#2563eb", fillOpacity: 0.7 })
+          const color = s.type === "public" ? "#2563eb" : "#ea580c"; // 公幼藍 / 非營利橘
+          const m = L.circleMarker([s.lat, s.lng], { radius: 6, color, fillColor: color, fillOpacity: 0.7, weight: 2 })
             .addTo(state.map)
             .bindPopup(buildPopup(s));
           (m as any).schoolId = s.school_id;
