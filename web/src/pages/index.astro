@@ -341,7 +341,19 @@ import MapView from "../components/MapView.astro";
             } else {
               probDisplay = fmtPct(prob);
             }
-            row.innerHTML = `<span>${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}</span><span>${priorityLabel} ${probDisplay}</span>`;
+
+            // "前面順位加總 + 你的順位剩幾個缺額" — sum regs[0..probIdx-1]
+            // (everyone in higher priorities), remaining = capacity - that sum.
+            let priorContext = "";
+            if (regs != null) {
+              let higherSum = 0;
+              for (let i = 0; i < probIdx && i < regs.length; i++) {
+                higherSum += regs[i] ?? 0;
+              }
+              const remaining = Math.max(0, c.capacity - higherSum);
+              priorContext = `<span class="prior-ctx">（前順位共 <strong>${higherSum}</strong> 人，剩 <strong>${remaining}</strong> 位）</span>`;
+            }
+            row.innerHTML = `<span>${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}${priorContext}</span><span>${priorityLabel} ${probDisplay}</span>`;
             classesEl.appendChild(row);
           }
 
@@ -461,12 +473,19 @@ import MapView from "../components/MapView.astro";
           const prob = c.probabilities.probs[cappedIdx];
           const label = applies ? `第 ${sel!.priority} 順位` : `順位 8（一般）`;
           const regs = c.registrations?.regs ?? null;
+          let priorCtx = "";
+          if (regs != null) {
+            let higherSum = 0;
+            for (let i = 0; i < probIdx && i < regs.length; i++) higherSum += regs[i] ?? 0;
+            const remaining = Math.max(0, c.capacity - higherSum);
+            priorCtx = `<br><span style="color:#6b7280;font-size:0.9em">前順位共 ${higherSum} 人，剩 ${remaining} 位</span>`;
+          }
           if (applies && regs != null) {
             const ws = calcSelf(c.capacity, regs, probIdx);
             const ps = ws.probs[probIdx];
-            lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <span class="muted">原 ${fmtPct(prob)} →</span> <strong>${selfLabelPrefix()} ${fmtPct(ps)}</strong>`);
+            lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <span class="muted">原 ${fmtPct(prob)} →</span> <strong>${selfLabelPrefix()} ${fmtPct(ps)}</strong>${priorCtx}`);
           } else {
-            lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <strong>${fmtPct(prob)}</strong>`);
+            lines.push(`${ageBandLabel(s.type, c.age_band)}｜名額 ${c.capacity}｜${label} <strong>${fmtPct(prob)}</strong>${priorCtx}`);
           }
         }
         return lines.join("<br>");
