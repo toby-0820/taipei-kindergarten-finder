@@ -11,16 +11,16 @@ import MapView from "../components/MapView.astro";
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>台北幼兒園即時查 by 勇者欣梅爾</title>
+    <title>台北幼兒園即時查</title>
     <meta name="description" content="輸入家裡位置或學校名稱，查詢台北市公幼與非營利幼兒園的招生名額、即時報名數與分順位中籤機率。資料每 9 分鐘更新。" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   </head>
   <body>
     <div class="container">
       <header class="site-header">
-        <img src="/logo.jpg" alt="勇者欣梅爾" class="logo" width="64" height="64" />
+        <span class="logo" aria-hidden="true">🏫</span>
         <div>
-          <h1>台北幼兒園即時查 <span class="byline">by 勇者欣梅爾</span></h1>
+          <h1>台北幼兒園即時查</h1>
           <p class="muted">公幼 / 非營利 招生即時資訊 · 每 9 分鐘更新</p>
         </div>
       </header>
@@ -653,7 +653,7 @@ import MapView from "../components/MapView.astro";
 
     <style>
       .site-header { margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem; }
-      .site-header .logo { border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+      .site-header .logo { font-size: 3rem; flex-shrink: 0; line-height: 1; }
       .site-header h1 { margin: 0; }
       .site-header p { margin: 0.25rem 0 0; }
       .site-header .byline { color: var(--muted); font-size: 0.65em; font-weight: 400; margin-left: 0.5rem; }

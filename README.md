@@ -170,8 +170,6 @@ bundle 用 2 個位，但只佔 1 個籤條（reg 減去 1 因為雙胞胎 2 個
 - Cloudflare Workers Free tier 50 subrequest 限制 → 全市完整刷新週期 9 分鐘（非 3 分鐘）。升級 Workers Paid（$5/月）可恢復 3 分鐘。
 - 學校地址 geocoding 用 Nominatim（OSM），部分學校的精確門牌號可能對到路口而非建築物。
 - 報名期外（非 4-6 月）API 仍會回招生名額但 `window_mode='closed'`，機率欄會空白。
-- `web/public/logo.jpg`（勇者欣梅爾）為 Frieren 動畫角色圖，是原作版權。Fork 請換成你自己的 logo（或刪 `<img>` 標籤）。
-
 ## 法律 / 免責
 
 - 本站為**非官方**資訊整合工具。所有招生數據以臺北市政府教育局官方公告為準。
