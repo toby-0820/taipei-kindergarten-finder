@@ -56,6 +56,15 @@ export function buildTargets(): FetchTarget[] {
  * to harvest cookies + viewstate, then POST with the target's __EVENTTARGET
  * and classType value to switch the page.
  */
+// Per-fetch timeout: kindergarten sites occasionally hang for 60s+, which
+// drags Promise.all's wallTime well past the 30s scheduled-handler budget.
+// Cap each fetch at 8s so a single slow upstream can't kill the whole batch.
+const FETCH_TIMEOUT_MS = 8000;
+
+function timeoutSignal(): AbortSignal {
+  return AbortSignal.timeout(FETCH_TIMEOUT_MS);
+}
+
 export async function fetchHtml(target: FetchTarget): Promise<string | null> {
   let firstResp: Response;
   try {
@@ -63,6 +72,7 @@ export async function fetchHtml(target: FetchTarget): Promise<string | null> {
       headers: { "user-agent": "TaipeiKindergartenFinderBot/1.0" },
       redirect: "follow",
       cf: { cacheTtl: 0 },
+      signal: timeoutSignal(),
     });
   } catch {
     return null;
@@ -105,6 +115,7 @@ export async function fetchHtml(target: FetchTarget): Promise<string | null> {
       },
       body: body.toString(),
       cf: { cacheTtl: 0 },
+      signal: timeoutSignal(),
     });
   } catch {
     return null;

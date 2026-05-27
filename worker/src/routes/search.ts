@@ -119,7 +119,7 @@ export async function handleSearch(request: Request, env: Env): Promise<Response
     priority_labels: modeInfo.priority_labels,
     query_lat: queryLat,
     query_lng: queryLng,
-    fetched_at: snapshots[0]?.fetched_at ?? null,
+    fetched_at: snapshots.length > 0 ? snapshots.reduce((m, s) => Math.max(m, s.fetched_at), 0) : null,
     location_status: outsideTaipei ? "outside_taipei" : "ok",
     results: enriched.slice(0, limit),
   });
